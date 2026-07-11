@@ -33,17 +33,6 @@ if(WIN32)
         qwindowkit_windows.cpp
         shared/qwkwindowsextra_p.h
         shared/windows10borderhandler_p.h
-    )
-elseif(APPLE)
-else()
-    list(APPEND _src
-        qwindowkit_linux.h
-        qwindowkit_linux.cpp
-    )
-endif()
-
-if(WIN32)
-    list(APPEND _src
         contexts/win32windowcontext_p.h
         contexts/win32windowcontext.cpp
     )
@@ -58,13 +47,17 @@ elseif(APPLE)
         "-framework Cocoa"
         "-framework AppKit"
     )
-else()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     list(APPEND _src
+        qwindowkit_linux.h
+        qwindowkit_linux.cpp
         contexts/linuxx11context_p.h
         contexts/linuxx11context.cpp
         contexts/linuxwaylandcontext_p.h
         contexts/linuxwaylandcontext.cpp
     )
+else()
+    message(FATAL_ERROR "QWindowKit Core does not support ${CMAKE_SYSTEM_NAME}.")
 endif()
 
 set(_sync_include_options)
@@ -80,7 +73,7 @@ if(QWINDOWKIT_ENABLE_STYLE_AGENT)
         list(APPEND _src style/styleagent_win.cpp)
     elseif(APPLE)
         list(APPEND _src style/styleagent_mac.mm)
-    else()
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         list(APPEND _src style/styleagent_linux.cpp)
     endif()
 else()

@@ -18,6 +18,8 @@
 #include <QWKCore/private/windowagentbase_p.h>
 #include <QWKWidgets/widgetwindowagent.h>
 
+#include <QtCore/QPointer>
+
 namespace QWK {
 
     class WidgetWindowAgentPrivate : public WindowAgentBasePrivate {
@@ -28,12 +30,28 @@ namespace QWK {
 
         void init();
 
+        bool installPlatformSystemButtons();
+        QRect platformSystemButtonAreaGeometry() const;
+
+#ifndef Q_OS_MAC
+        void setupSystemButtonVisibility();
+        void updateSystemButtonVisibility();
+#endif
+
         // Host
         QWidget *hostWidget{};
+#ifndef Q_OS_MAC
+        std::unique_ptr<QObject> systemButtonVisibilityEventFilter;
+#endif
 
 #ifdef Q_OS_MAC
-        QWidget *systemButtonAreaWidget{};
+        QPointer<QWidget> systemButtonAreaWidget;
+        QRect systemButtonAreaRect;
         std::unique_ptr<QObject> systemButtonAreaWidgetEventFilter;
+#endif
+
+#ifdef Q_OS_WINDOWS
+        QPointer<QWidget> windowsSystemButtonBar;
 #endif
 
 #if defined(Q_OS_WINDOWS) && QWINDOWKIT_CONFIG(ENABLE_WINDOWS_SYSTEM_BORDERS)

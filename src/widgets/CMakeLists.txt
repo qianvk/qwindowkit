@@ -13,9 +13,18 @@ set(_src
 )
 
 if(WIN32)
-    list(APPEND _src widgetwindowagent_win.cpp)
+    list(APPEND _src
+        widgetwindowagent_nonmac.cpp
+        widgetwindowagent_win.cpp
+        resources/windows_caption_buttons.qrc
+    )
 elseif(APPLE)
     list(APPEND _src widgetwindowagent_mac.cpp)
+else()
+    list(APPEND _src
+        widgetwindowagent_nonmac.cpp
+        widgetwindowagent_generic.cpp
+    )
 endif()
 
 qwk_add_library(${PROJECT_NAME} AUTOGEN

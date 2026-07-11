@@ -5,8 +5,6 @@
 #include "widgetwindowagent.h"
 #include "widgetwindowagent_p.h"
 
-#include <QtGui/QtEvents>
-#include <QtGui/QPainter>
 #include <QtCore/QDebug>
 
 #include "widgetitemdelegate_p.h"
@@ -66,12 +64,25 @@ namespace QWK {
         // without this attribute, and this behavior will break QWK functionality.
         // So far enabling this attribute is a must for QWK users.
         w->setAttribute(Qt::WA_DontCreateNativeAncestors);
+#if defined(Q_OS_MAC) && QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+        // Frameless windows intentionally place custom chrome in the native title-bar area.
+        // Qt Widgets otherwise adds the macOS safe-area inset to a top-level widget's
+        // contents margins, pushing its layout below that area.
+        w->setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea, false);
+#endif
         // Make sure the native window handle is actually created before we apply
         // various hooks.
         // w->setAttribute(Qt::WA_NativeWindow); // ### FIXME: Check
 
         d->setup(w, new WidgetItemDelegate());
         d->hostWidget = w;
+#ifndef Q_OS_MAC
+        d->setupSystemButtonVisibility();
+        connect(this, &WindowAgentBase::systemButtonVisibilityChanged, this,
+                [d](WindowAgentBase::SystemButtonVisibility) {
+                    d->updateSystemButtonVisibility();
+                });
+#endif
 
 #if defined(Q_OS_WINDOWS) && QWINDOWKIT_CONFIG(ENABLE_WINDOWS_SYSTEM_BORDERS)
         d->setupWindows10BorderWorkaround();
@@ -91,6 +102,22 @@ namespace QWK {
         return ret;
     }
 
+    QWidget *WidgetWindowAgent::titleBar() const {
+        Q_D(const WidgetWindowAgent);
+        return qobject_cast<QWidget *>(d->context->titleBar());
+    }
+
+    void WidgetWindowAgent::setTitleBar(QWidget *titleBar) {
+        Q_D(WidgetWindowAgent);
+        if (!d->context->setTitleBar(titleBar)) {
+            return;
+        }
+#ifdef Q_OS_MAC
+        setSystemButtonArea(nullptr);
+#endif
+        Q_EMIT titleBarChanged(titleBar);
+    }
+
     bool WidgetWindowAgent::addTitleBar(QWidget *titleBar)
     {
         Q_D(WidgetWindowAgent);
@@ -99,6 +126,7 @@ namespace QWK {
         }
 
         Q_EMIT titleBarAdded(titleBar);
+        return true;
     }
 
     bool WidgetWindowAgent::removeTitleBar(QWidget *titleBar)
@@ -109,6 +137,7 @@ namespace QWK {
         }
 
         Q_EMIT titleBarRemoved(titleBar);
+        return true;
     }
 
     /*!
@@ -128,7 +157,30 @@ namespace QWK {
         if (!d->context->setSystemButton(button, w)) {
             return;
         }
+#ifndef Q_OS_MAC
+        d->updateSystemButtonVisibility();
+#endif
         Q_EMIT systemButtonChanged(button, w);
+    }
+
+    /*!
+        Installs the platform system buttons managed by QWindowKit.
+
+        On Windows, QWindowKit creates and binds the minimize, maximize, and close buttons. On
+        macOS, AppKit already owns the native traffic-light buttons, so this confirms that native
+        support is available. Other platforms may return \c false.
+    */
+    bool WidgetWindowAgent::installSystemButtons() {
+        Q_D(WidgetWindowAgent);
+        return d->installPlatformSystemButtons();
+    }
+
+    /*!
+        Returns the system button area in top-level widget coordinates.
+    */
+    QRect WidgetWindowAgent::systemButtonAreaGeometry() const {
+        Q_D(const WidgetWindowAgent);
+        return d->platformSystemButtonAreaGeometry();
     }
 
     /*!
@@ -142,13 +194,23 @@ namespace QWK {
 
     /*!
         Makes the widget able to receive mouse events on title bar if \a visible is \c true.
-        You're supposed to make sure that the specified widget \a w is a child or descendant
-        of the title bar widget.
+        The widget may be a sibling of \a titleBar, such as QSplitterHandle, but both widgets
+        must belong to the agent's top-level window.
     */
     bool WidgetWindowAgent::setHitTestVisible(QWidget *titleBar, QWidget *w, bool visible)
     {
         Q_D(WidgetWindowAgent);
         return d->context->setHitTestVisible(titleBar, w, visible);
+    }
+
+    bool WidgetWindowAgent::isHitTestVisible(const QWidget *w) const {
+        Q_D(const WidgetWindowAgent);
+        return d->context->isHitTestVisible(w);
+    }
+
+    void WidgetWindowAgent::setHitTestVisible(QWidget *w, bool visible) {
+        Q_D(WidgetWindowAgent);
+        d->context->setHitTestVisible(w, visible);
     }
 
     /*!
@@ -160,7 +222,7 @@ namespace QWK {
     }
 
     /*!
-        \fn void WidgetWindowAgent::titleBarChanged(const QWidget *w)
+        \fn void WidgetWindowAgent::titleBarChanged(QWidget *w)
 
         This signal is emitted when the title bar widget is replaced.
     */
@@ -181,4 +243,3 @@ void QWK::WidgetWindowAgent::clearTitleBars()
 
     Q_EMIT titleBarsCleared();
 }
-

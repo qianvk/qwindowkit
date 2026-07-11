@@ -60,6 +60,12 @@ namespace QWK {
         return {originPoint, size};
     }
 
+    bool WidgetItemDelegate::isInHostWindow(const QObject *obj, const QObject *host) const {
+        const auto *widget = qobject_cast<const QWidget *>(obj);
+        const auto *hostWidget = qobject_cast<const QWidget *>(host);
+        return widget && hostWidget && widget->window() == hostWidget->window();
+    }
+
     QWindow *WidgetItemDelegate::hostWindow(const QObject *host) const {
         return static_cast<const QWidget *>(host)->windowHandle();
     }

@@ -51,14 +51,10 @@ namespace QWK {
             return false;
         }
 
-        /*
-                Hit-test-visible items must belong to their title bar.
-
-             This check prevents registering a widget from another pane into the
-             wrong title bar. Without it, overlapping title bars can produce
-             confusing native hit-test results.
-         */
-        if (!m_delegate->isSameOrAncestorOf(titleBar, obj)) {
+        // Sibling controls such as QSplitterHandle may overlap a title bar. They are valid
+        // exclusions as long as both objects belong to this top-level window.
+        if (!m_delegate->isInHostWindow(titleBar, m_host) ||
+            !m_delegate->isInHostWindow(obj, m_host)) {
             return false;
         }
 
@@ -71,10 +67,27 @@ namespace QWK {
         return true;
     }
 
+    bool AbstractWindowContext::isHitTestVisible(const QObject *obj) const {
+        if (!obj) {
+            return false;
+        }
+        for (const auto &record : m_titleBars) {
+            if (record.hitTestVisibleItems.contains(obj)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool AbstractWindowContext::setHitTestVisible(QObject *obj, bool visible) {
+        auto *bar = titleBar();
+        return bar && setHitTestVisible(bar, obj, visible);
+    }
+
     bool AbstractWindowContext::setSystemButton(WindowAgentBase::SystemButton button,
                                                 QObject *obj) {
-        Q_ASSERT(button != WindowAgentBase::Unknown);
-        if (button == WindowAgentBase::Unknown) {
+        Q_ASSERT(button > WindowAgentBase::Unknown && button <= WindowAgentBase::Close);
+        if (button <= WindowAgentBase::Unknown || button > WindowAgentBase::Close) {
             return false;
         }
 
@@ -83,6 +96,21 @@ namespace QWK {
             return false;
         }
         m_systemButtons[button] = obj;
+        return true;
+    }
+
+    bool AbstractWindowContext::setSystemButtonVisibility(
+        WindowAgentBase::SystemButtonVisibility visibility) {
+        if (visibility < WindowAgentBase::AlwaysVisible ||
+            visibility > WindowAgentBase::AlwaysHidden ||
+            m_systemButtonVisibility == visibility) {
+            return false;
+        }
+
+        m_systemButtonVisibility = visibility;
+        if (m_windowId) {
+            virtual_hook(SystemButtonVisibilityChangedHook, nullptr);
+        }
         return true;
     }
 
@@ -98,7 +126,15 @@ namespace QWK {
         *button = WindowAgentBase::Unknown;
         for (int i = WindowAgentBase::WindowIcon; i <= WindowAgentBase::Close; ++i) {
             auto currentButton = m_systemButtons[i];
-            if (!currentButton || !m_delegate->isVisible(currentButton) || !m_delegate->isEnabled(currentButton)) {
+            if (!currentButton || !m_delegate->isEnabled(currentButton)) {
+                continue;
+            }
+
+            // Windows must retain native hit testing while hover-only caption buttons are hidden.
+            // Its existing non-client event bridge then delivers mouse movement back to Qt, which
+            // lets WidgetWindowAgent reveal the registered buttons.
+            if (!m_delegate->isVisible(currentButton) &&
+                m_systemButtonVisibility != WindowAgentBase::VisibleOnHover) {
                 continue;
             }
             if (m_delegate->mapGeometryToScene(currentButton).contains(pos)) {
@@ -126,14 +162,14 @@ namespace QWK {
 
         QRect windowRect = {QPoint(0, 0), m_windowHandle->size()};
         for (const auto& record : m_titleBars) {
-            if (!m_delegate->isVisible(record.titleBar) || !m_delegate->isEnabled(record.titleBar)) {
+            if (!record.titleBar || !m_delegate->isVisible(record.titleBar) ||
+                !m_delegate->isEnabled(record.titleBar)) {
                 // The title bar is hidden or disabled for some reason, treat it as there's
                 // no title bar.
                 continue;
             }
 
             QRect titleBarRect = m_delegate->mapGeometryToScene(record.titleBar);
-            // TODO: 这个判断是否有必要？
             if (!titleBarRect.intersects(windowRect)) {
                 // The title bar is totally outside the window for some reason,
                 // also treat it as there's no title bar.
@@ -145,7 +181,7 @@ namespace QWK {
             }
 
             for (auto &&item : std::as_const(record.hitTestVisibleItems)) {
-                if (item && m_delegate->isVisible(item) &&
+                if (item && m_delegate->isVisible(item) && m_delegate->isEnabled(item) &&
                     m_delegate->mapGeometryToScene(item).contains(pos)) {
                     return false;
                 }
@@ -342,6 +378,30 @@ bool QWK::AbstractWindowContext::addTitleBar(QObject *titleBar)
     return true;
 }
 
+QObject *QWK::AbstractWindowContext::titleBar() const
+{
+    for (const auto &record : m_titleBars) {
+        if (record.titleBar) {
+            return record.titleBar;
+        }
+    }
+    return nullptr;
+}
+
+bool QWK::AbstractWindowContext::setTitleBar(QObject *titleBar)
+{
+    Q_ASSERT(titleBar);
+    if (!titleBar || (m_titleBars.size() == 1 && m_titleBars.constFirst().titleBar == titleBar)) {
+        return false;
+    }
+
+    clearTitleBars();
+    for (auto &button : m_systemButtons) {
+        button = nullptr;
+    }
+    return addTitleBar(titleBar);
+}
+
 
 
 QList<QObject *> QWK::AbstractWindowContext::titleBars() const
@@ -350,7 +410,9 @@ QList<QObject *> QWK::AbstractWindowContext::titleBars() const
     titleBars.reserve(m_titleBars.size());
 
     for (const auto& record : m_titleBars) {
-        titleBars.append(record.titleBar);
+        if (record.titleBar) {
+            titleBars.append(record.titleBar);
+        }
     }
 
     return titleBars;
@@ -380,4 +442,3 @@ bool QWK::AbstractWindowContext::isTitleBarRegistered(const QObject *titleBar) c
 {
     return findTitleBarRecord(titleBar);
 }
-

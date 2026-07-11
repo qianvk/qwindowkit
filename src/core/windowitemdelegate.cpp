@@ -4,8 +4,6 @@
 
 #include "windowitemdelegate_p.h"
 
-#include <QtWidgets/QWidget>
-
 namespace QWK {
 
     WindowItemDelegate::WindowItemDelegate() = default;
@@ -14,14 +12,21 @@ namespace QWK {
 
     bool WindowItemDelegate::isSameOrAncestorOf(const QObject *ancestor, const QObject *child) const
     {
-        const auto *ancestorWidget = qobject_cast<const QWidget *>(ancestor);
-        const auto *childWidget = qobject_cast<const QWidget *>(child);
-
-        if (!ancestorWidget || !childWidget) {
+        if (!ancestor || !child) {
             return false;
         }
 
-        return ancestorWidget == childWidget || ancestorWidget->isAncestorOf(childWidget);
+        if (ancestor == child) {
+            return true;
+        }
+
+        for (auto *p = child->parent(); p; p = p->parent()) {
+            if (p == ancestor) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     void WindowItemDelegate::resetQtGrabbedControl(QObject *host) const {

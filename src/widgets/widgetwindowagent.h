@@ -26,6 +26,9 @@ namespace QWK {
 
         QList<QWidget *> titleBars() const;
 
+        QWidget *titleBar() const;
+        void setTitleBar(QWidget *titleBar);
+
         bool addTitleBar(QWidget *titleBar);
         bool removeTitleBar(QWidget *titleBar);
         void clearTitleBars();
@@ -33,10 +36,15 @@ namespace QWK {
         QWidget *systemButton(SystemButton button) const;
         void setSystemButton(SystemButton button, QWidget *w);
 
+        bool installSystemButtons();
+        QRect systemButtonAreaGeometry() const;
+
 #ifdef Q_OS_MAC
-        // The system button area APIs are experimental, very likely to change in the future.
+        // The native traffic-light buttons are centered in this widget's window-space geometry.
         QWidget *systemButtonArea() const;
         void setSystemButtonArea(QWidget *widget);
+
+        void setSystemButtonAreaGeometry(const QRect &rect);
 
         ScreenRectCallback systemButtonAreaCallback() const;
         void setSystemButtonAreaCallback(const ScreenRectCallback &callback);
@@ -44,8 +52,11 @@ namespace QWK {
 
         bool isHitTestVisible(QWidget *titleBar, const QWidget *w) const;
         bool setHitTestVisible(QWidget *titleBar, QWidget *w, bool visible = true);
+        bool isHitTestVisible(const QWidget *w) const;
+        void setHitTestVisible(QWidget *w, bool visible = true);
 
     Q_SIGNALS:
+        void titleBarChanged(QWidget *w);
         void titleBarAdded(QWidget *w);
         void titleBarRemoved(QWidget *w);
         void titleBarsCleared();

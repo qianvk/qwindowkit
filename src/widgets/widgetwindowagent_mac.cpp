@@ -9,7 +9,7 @@
 namespace QWK {
 
     static inline QRect getWidgetSceneRect(QWidget *widget) {
-        return {widget->mapTo(widget->window(), QPoint()), widget->size()};
+        return widget ? QRect(widget->mapTo(widget->window(), QPoint()), widget->size()) : QRect();
     }
 
     class SystemButtonAreaWidgetEventFilter : public QObject {
@@ -18,8 +18,9 @@ namespace QWK {
                                           QObject *parent = nullptr)
             : QObject(parent), widget(widget), ctx(ctx) {
             widget->installEventFilter(this);
-            ctx->setSystemButtonAreaCallback([widget](const QSize &) {
-                return getWidgetSceneRect(widget); //
+            const QPointer<QWidget> guardedWidget(widget);
+            ctx->setSystemButtonAreaCallback([guardedWidget](const QSize &) {
+                return getWidgetSceneRect(guardedWidget.data());
             });
         }
         ~SystemButtonAreaWidgetEventFilter() override = default;
@@ -41,9 +42,20 @@ namespace QWK {
         }
 
     protected:
-        QWidget *widget;
+        QPointer<QWidget> widget;
         AbstractWindowContext *ctx;
     };
+
+    bool WidgetWindowAgentPrivate::installPlatformSystemButtons() {
+        return context != nullptr;
+    }
+
+    QRect WidgetWindowAgentPrivate::platformSystemButtonAreaGeometry() const {
+        if (systemButtonAreaWidget) {
+            return getWidgetSceneRect(systemButtonAreaWidget);
+        }
+        return systemButtonAreaRect;
+    }
 
     /*!
         Returns the widget that acts as the system button area.
@@ -54,18 +66,17 @@ namespace QWK {
     }
 
     /*!
-        Sets the widget that acts as the system button area. The system button will be centered in
-        its area, it is recommended to place the widget in a layout and set a fixed size policy.
-
-        The system button will be visible in the system title bar area.
+        Sets the widget that positions the native traffic-light buttons. The buttons are centered
+        in the widget's window-space geometry. Moving or resizing the widget updates their position.
     */
     void WidgetWindowAgent::setSystemButtonArea(QWidget *widget) {
         Q_D(WidgetWindowAgent);
-        if (d->systemButtonAreaWidget == widget)
+        if (widget && d->systemButtonAreaWidget == widget)
             return;
 
         auto ctx = d->context.get();
         d->systemButtonAreaWidget = widget;
+        d->systemButtonAreaRect = {};
         if (!widget) {
             d->context->setSystemButtonAreaCallback({});
             d->systemButtonAreaWidgetEventFilter.reset();
@@ -76,7 +87,29 @@ namespace QWK {
     }
 
     /*!
-        Returns the the system button area callback.
+        Sets the placement area for the native traffic-light buttons in top-level widget
+        coordinates. AppKit owns and draws the buttons; QWindowKit centers them in \a rect.
+    */
+    void WidgetWindowAgent::setSystemButtonAreaGeometry(const QRect &rect) {
+        Q_D(WidgetWindowAgent);
+        if (!d->systemButtonAreaWidget && d->systemButtonAreaRect == rect) {
+            return;
+        }
+
+        d->systemButtonAreaWidget = nullptr;
+        d->systemButtonAreaWidgetEventFilter.reset();
+        d->systemButtonAreaRect = rect;
+        if (!rect.isValid()) {
+            d->context->setSystemButtonAreaCallback({});
+            return;
+        }
+        d->context->setSystemButtonAreaCallback([rect](const QSize &) {
+            return rect;
+        });
+    }
+
+    /*!
+        Returns the system button area callback.
     */
     ScreenRectCallback WidgetWindowAgent::systemButtonAreaCallback() const {
         Q_D(const WidgetWindowAgent);
@@ -84,14 +117,15 @@ namespace QWK {
     }
 
     /*!
-        Sets the the system button area callback, the \c size of the callback is the native title
+        Sets the system button area callback. The \c size argument is the native title
         bar size.
-        
+
         The system button position will be updated when the window resizes.
     */
     void WidgetWindowAgent::setSystemButtonAreaCallback(const ScreenRectCallback &callback) {
         Q_D(WidgetWindowAgent);
         setSystemButtonArea(nullptr);
+        d->systemButtonAreaRect = {};
         d->context->setSystemButtonAreaCallback(callback);
     }
 

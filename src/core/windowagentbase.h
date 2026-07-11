@@ -17,6 +17,8 @@ namespace QWK {
 
     class QWK_CORE_EXPORT WindowAgentBase : public QObject {
         Q_OBJECT
+        Q_PROPERTY(SystemButtonVisibility systemButtonVisibility READ systemButtonVisibility WRITE
+                       setSystemButtonVisibility NOTIFY systemButtonVisibilityChanged)
         Q_DECLARE_PRIVATE(WindowAgentBase)
     public:
         ~WindowAgentBase() override;
@@ -31,8 +33,21 @@ namespace QWK {
         };
         Q_ENUM(SystemButton)
 
+        enum SystemButtonVisibility {
+            AlwaysVisible, ///< Keep the system buttons visible.
+            VisibleOnHover, ///< Show the system buttons while their area is hovered.
+            AlwaysHidden, ///< Keep the system buttons hidden.
+        };
+        Q_ENUM(SystemButtonVisibility)
+
+        SystemButtonVisibility systemButtonVisibility() const;
+        void setSystemButtonVisibility(SystemButtonVisibility visibility);
+
         QVariant windowAttribute(const QString &key) const;
         Q_INVOKABLE bool setWindowAttribute(const QString &key, const QVariant &attribute);
+
+    Q_SIGNALS:
+        void systemButtonVisibilityChanged(SystemButtonVisibility visibility);
 
     public Q_SLOTS:
         void showSystemMenu(const QPoint &pos); // Not available on macOS.

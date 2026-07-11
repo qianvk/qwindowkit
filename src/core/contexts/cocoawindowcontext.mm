@@ -38,6 +38,7 @@ public:
         WillExitFullScreen,
         DidExitFullScreen,
         DidResize,
+        DidUpdate,
     };
 
     virtual ~QWK_NSWindowDelegate() = default;
@@ -76,6 +77,10 @@ public:
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(windowDidResize:)
                                                      name:NSWindowDidResizeNotification
+                                                   object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(windowDidUpdate:)
+                                                     name:NSWindowDidUpdateNotification
                                                    object:nil];
     }
     return self;
@@ -131,6 +136,15 @@ public:
     }
 }
 
+- (void)windowDidUpdate:(NSNotification *)notification {
+    auto nswindow = reinterpret_cast<NSWindow *>(notification.object);
+    auto nsview = [nswindow contentView];
+    if (auto proxy = QWK::g_proxyList->value(reinterpret_cast<WId>(nsview))) {
+        reinterpret_cast<QWK_NSWindowDelegate *>(proxy)->windowEvent(
+            QWK_NSWindowDelegate::DidUpdate);
+    }
+}
+
 @end
 
 @interface QWK_NSViewObserver : NSObject
@@ -153,6 +167,8 @@ public:
 namespace QWK {
 
     struct NSWindowProxy : public QWK_NSWindowDelegate {
+        using SystemButtonVisibility = WindowAgentBase::SystemButtonVisibility;
+
         enum class BlurMode {
             Dark,
             Light,
@@ -179,7 +195,8 @@ namespace QWK {
 
         ~NSWindowProxy() override {
             lifetimeToken->store(false, std::memory_order_release);
-            
+
+            removeSystemButtonTrackingArea();
             [buttonObserver release];
 
             [nsview removeObserver:observer forKeyPath:@"window"];
@@ -192,7 +209,7 @@ namespace QWK {
                 case WillExitFullScreen: {
                     auto nswindow = [nsview window];
                     nswindow.titleVisibility = NSWindowTitleHidden;
-                    if (!screenRectCallback || !systemButtonVisible)
+                    if (!screenRectCallback || !buttonsVisible)
                         return;
 
                     // The system buttons will stuck at their default positions when the
@@ -203,19 +220,20 @@ namespace QWK {
                 }
 
                 case DidExitFullScreen: {
-                    if (!screenRectCallback || !systemButtonVisible)
-                        return;
-
-                    setButtonsVisible(systemButtonVisible);
-
                     updateSystemButtonRect();
+                    updateSystemButtonTrackingArea();
+                    updateSystemButtonVisibility();
                     break;
                 }
 
                 case DidResize: {
-                    if (!screenRectCallback || !systemButtonVisible) {
-                        return;
-                    }
+                    updateSystemButtonRect();
+                    updateSystemButtonTrackingArea();
+                    updateSystemButtonVisibility();
+                    break;
+                }
+
+                case DidUpdate: {
                     updateSystemButtonRect();
                     break;
                 }
@@ -223,6 +241,7 @@ namespace QWK {
                 case DidEnterFullScreen: {
                     auto nswindow = [nsview window];
                     nswindow.titleVisibility = NSWindowTitleVisible;
+                    updateSystemButtonVisibility();
                     break;
                 }
 
@@ -232,34 +251,65 @@ namespace QWK {
         }
 
         // System buttons visibility
-        void setSystemButtonVisible(bool visible) {
-            systemButtonVisible = visible;
-            setButtonsVisible(visible);
+        void setSystemButtonVisibility(SystemButtonVisibility visibility) {
+            systemButtonVisibility = visibility;
+            updateSystemButtonTrackingArea();
+            updateSystemButtonVisibility();
+        }
 
-            if (!screenRectCallback || !visible) {
+        void setSystemButtonHovered(bool hovered) {
+            if (systemButtonHovered == hovered ||
+                systemButtonVisibility != WindowAgentBase::VisibleOnHover) {
                 return;
             }
-            updateSystemButtonRect();
+            systemButtonHovered = hovered;
+            updateSystemButtonVisibility();
+        }
+
+        bool shouldShowSystemButtons() const {
+            switch (systemButtonVisibility) {
+                case WindowAgentBase::AlwaysVisible:
+                    return true;
+                case WindowAgentBase::VisibleOnHover:
+                    return systemButtonHovered;
+                case WindowAgentBase::AlwaysHidden:
+                    return false;
+            }
+            return true;
+        }
+
+        void updateSystemButtonVisibility() {
+            setButtonsVisible(shouldShowSystemButtons());
         }
 
         // System buttons area
         void setScreenRectCallback(const ScreenRectCallback &callback) {
             screenRectCallback = callback;
-
-            if (!callback || !systemButtonVisible) {
-                return;
-            }
             updateSystemButtonRect();
+            updateSystemButtonTrackingArea();
+            updateSystemButtonVisibility();
         }
 
         void updateSystemButtonRect() {
-            if (!screenRectCallback || !systemButtonVisible) {
+            if (!screenRectCallback) {
                 return;
             }
+            auto nswindow = [nsview window];
+            if (!nswindow) {
+                return;
+            }
+
+            // AppKit lays out the standard buttons when a window is first displayed. Flush that
+            // layout before applying user geometry so the initial AppKit pass cannot win.
+            [nswindow layoutIfNeeded];
+
             const auto &buttons = systemButtons();
             const auto &leftButton = buttons[0];
             const auto &midButton = buttons[1];
             const auto &rightButton = buttons[2];
+            if (!leftButton || !midButton || !rightButton) {
+                return;
+            }
 
             auto titlebar = rightButton.superview;
             int titlebarHeight = titlebar.frame.size.height;
@@ -280,24 +330,104 @@ namespace QWK {
                 center.x() - width / 2,
                 center.y() - height / 2,
             };
-            [midButton setFrameOrigin:centerOrigin];
+            if (!NSEqualPoints(midButton.frame.origin, centerOrigin)) {
+                [midButton setFrameOrigin:centerOrigin];
+            }
 
             // Left button
             NSPoint leftOrigin = {
                 centerOrigin.x - spacing,
                 centerOrigin.y,
             };
-            [leftButton setFrameOrigin:leftOrigin];
+            if (!NSEqualPoints(leftButton.frame.origin, leftOrigin)) {
+                [leftButton setFrameOrigin:leftOrigin];
+            }
 
             // Right button
             NSPoint rightOrigin = {
                 centerOrigin.x + spacing,
                 centerOrigin.y,
             };
-            [rightButton setFrameOrigin:rightOrigin];
+            if (!NSEqualPoints(rightButton.frame.origin, rightOrigin)) {
+                [rightButton setFrameOrigin:rightOrigin];
+            }
         }
 
-        inline std::array<NSButton *, 3> systemButtons() {
+        QRect systemButtonAreaRect() const {
+            auto nswindow = [nsview window];
+            if (!nswindow) {
+                return {};
+            }
+
+            if (screenRectCallback) {
+                const auto closeButton =
+                    [nswindow standardWindowButton:NSWindowCloseButton];
+                const auto titlebarHeight = closeButton
+                                                ? static_cast<int>(closeButton.superview.frame.size.height)
+                                                : 0;
+                return screenRectCallback(
+                    QSize(static_cast<int>(nsview.frame.size.width), titlebarHeight));
+            }
+
+            NSRect nativeRect = NSZeroRect;
+            bool hasRect = false;
+            for (NSButton *button : systemButtons()) {
+                if (!button || !button.superview) {
+                    continue;
+                }
+                const NSRect rect = [button.superview convertRect:button.frame toView:nsview];
+                nativeRect = hasRect ? NSUnionRect(nativeRect, rect) : rect;
+                hasRect = true;
+            }
+
+            if (!hasRect) {
+                return {};
+            }
+
+            return QRect(qRound(NSMinX(nativeRect)), qRound(NSMinY(nativeRect)),
+                         qRound(NSWidth(nativeRect)), qRound(NSHeight(nativeRect)))
+                .adjusted(-8, -8, 8, 8);
+        }
+
+        void removeSystemButtonTrackingArea() {
+            if (!systemButtonTrackingArea) {
+                return;
+            }
+            [nsview removeTrackingArea:systemButtonTrackingArea];
+            [systemButtonTrackingArea release];
+            systemButtonTrackingArea = nil;
+        }
+
+        void updateSystemButtonTrackingArea() {
+            removeSystemButtonTrackingArea();
+            systemButtonHovered = false;
+
+            auto nswindow = [nsview window];
+            if (!nswindow || systemButtonVisibility != WindowAgentBase::VisibleOnHover) {
+                return;
+            }
+
+            const QRect area = systemButtonAreaRect();
+            if (!area.isValid()) {
+                return;
+            }
+
+            const NSRect nativeArea = NSMakeRect(area.x(), area.y(), area.width(), area.height());
+            const NSTrackingAreaOptions options = NSTrackingMouseEnteredAndExited |
+                                                  NSTrackingActiveAlways |
+                                                  NSTrackingEnabledDuringMouseDrag;
+            systemButtonTrackingArea = [[NSTrackingArea alloc] initWithRect:nativeArea
+                                                                     options:options
+                                                                       owner:observer
+                                                                    userInfo:nil];
+            [nsview addTrackingArea:systemButtonTrackingArea];
+
+            const NSPoint mouseLocation =
+                [nsview convertPoint:nswindow.mouseLocationOutsideOfEventStream fromView:nil];
+            systemButtonHovered = NSPointInRect(mouseLocation, nativeArea);
+        }
+
+        inline std::array<NSButton *, 3> systemButtons() const {
             auto nswindow = [nsview window];
             if (!nswindow) {
                 return {nullptr, nullptr, nullptr};
@@ -309,6 +439,7 @@ namespace QWK {
         }
 
         void setButtonsVisible(bool visible) {
+            buttonsVisible = visible;
             checkButton = false;
 
             for (NSButton * button : systemButtons()) {
@@ -318,7 +449,7 @@ namespace QWK {
             checkButton = true;
         }
 
-        bool hasButtonVisible() const { return systemButtonVisible; }
+        bool hasButtonVisible() const { return buttonsVisible; }
 
         bool hasCheckButton() const { return checkButton; }
 
@@ -601,12 +732,16 @@ namespace QWK {
                 
                 NSMutableArray<NSButton *> *array = [NSMutableArray arrayWithCapacity:3];
                 for (NSButton *button : self_->systemButtons()) {
-                    button.hidden = !self_->systemButtonVisible;
-                    [array addObject:button];
+                    if (button) {
+                        [array addObject:button];
+                    }
                 }
 
                 // Attach observer to get notified when AppKit reshows buttons.
                 [self_->buttonObserver attach:array];
+                self_->updateSystemButtonRect();
+                self_->updateSystemButtonTrackingArea();
+                self_->updateSystemButtonVisibility();
             });
         }
 
@@ -774,9 +909,12 @@ namespace QWK {
         
         std::shared_ptr<std::atomic_bool> lifetimeToken = std::make_shared<std::atomic_bool>(true);
         
-        bool systemButtonVisible = true;
+        SystemButtonVisibility systemButtonVisibility = WindowAgentBase::AlwaysVisible;
+        bool systemButtonHovered = false;
+        bool buttonsVisible = true;
         bool checkButton = true;
         ScreenRectCallback screenRectCallback;
+        NSTrackingArea *systemButtonTrackingArea = nil;
 
         GlassMode glassMode = GlassMode::None;
         qreal glassCornerRadius = 0;
@@ -991,7 +1129,22 @@ namespace QWK {
     void CocoaWindowContext::virtual_hook(int id, void *data) {
         switch (id) {
             case SystemButtonAreaChangedHook: {
+                if (!m_windowId) {
+                    return;
+                }
                 ensureWindowProxy(m_windowId)->setScreenRectCallback(m_systemButtonAreaCallback);
+                return;
+            }
+
+            case SystemButtonVisibilityChangedHook: {
+                if (!m_windowId) {
+                    return;
+                }
+                const auto visibility =
+                    windowAttribute(QStringLiteral("no-system-buttons")).toBool()
+                        ? WindowAgentBase::AlwaysHidden
+                        : m_systemButtonVisibility;
+                ensureWindowProxy(m_windowId)->setSystemButtonVisibility(visibility);
                 return;
             }
 
@@ -1023,7 +1176,10 @@ namespace QWK {
         // Allocate new resources
         const auto proxy = ensureWindowProxy(winId);
         if (proxy) {
-            proxy->setSystemButtonVisible(!windowAttribute(QStringLiteral("no-system-buttons")).toBool());
+            const auto visibility = windowAttribute(QStringLiteral("no-system-buttons")).toBool()
+                                        ? WindowAgentBase::AlwaysHidden
+                                        : m_systemButtonVisibility;
+            proxy->setSystemButtonVisibility(visibility);
             proxy->setScreenRectCallback(m_systemButtonAreaCallback);
             proxy->setSystemTitleBarVisible(false);
         }
@@ -1042,7 +1198,8 @@ namespace QWK {
             if (attribute.typeId() != QMetaType::Type::Bool)
 #endif
                 return false;
-            ensureWindowProxy(m_windowId)->setSystemButtonVisible(!attribute.toBool());
+            ensureWindowProxy(m_windowId)->setSystemButtonVisibility(
+                attribute.toBool() ? WindowAgentBase::AlwaysHidden : m_systemButtonVisibility);
             return true;
         }
 
@@ -1173,8 +1330,20 @@ namespace QWK {
         if (newWindow) {
             _proxy->setSystemTitleBarVisible(false);
             _proxy->updateSystemButtonRect();
+            _proxy->updateSystemButtonTrackingArea();
+            _proxy->updateSystemButtonVisibility();
         }
     }
+}
+
+- (void)mouseEntered:(NSEvent *)event {
+    Q_UNUSED(event)
+    _proxy->setSystemButtonHovered(true);
+}
+
+- (void)mouseExited:(NSEvent *)event {
+    Q_UNUSED(event)
+    _proxy->setSystemButtonHovered(false);
 }
 
 @end

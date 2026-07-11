@@ -1,328 +1,182 @@
 # QWindowKit
 
-Cross-platform window customization framework for Qt Widgets and Qt Quick.
-
-This project inherited the major implementations from [wangwenx190 FramelessHelper](https://github.com/wangwenx190/framelesshelper), with a complete refactoring and upgrading of the architecture.
-
-Feature requests are welcome.
-
-## Stay In Touch :triangular_flag_on_post:
-
-You can share your findings, thoughts and ideas on improving / implementing QWindowKit functionalities on more platforms and apps!
-
-- Chat with us on [Discord](https://discord.gg/grrM4Tmesy)
-- 中文用户可加入 QQ 群 876419693
+QWindowKit provides native-aware frameless windows for Qt Widgets and Qt Quick. It keeps window
+movement, resizing, system menus, caption hit testing, and platform window controls connected to
+the operating system while allowing application content to occupy the title-bar area.
 
 ## Supported Platforms
 
-- Microsoft Windows
-- Apple macOS (11+)
-- GNU/Linux
+| Platform | Native backend | Window controls |
+| --- | --- | --- |
+| Windows 10/11 | Win32, DWM, `WM_NCHITTEST` | Optional QWindowKit-managed caption buttons |
+| macOS 11+ | AppKit, `NSWindow` | Native traffic-light buttons |
+| Linux | X11 or Wayland | Application-provided controls |
 
-## Features
+Platform source files are selected by CMake. Windows builds do not compile AppKit, X11, or
+Wayland code; macOS builds do not compile Win32, X11, Wayland, or QWidget caption-button code.
 
-- Full support of Windows 11 Snap Layout
-- Better workaround to handle Windows 10 top border issue
-- Support Mac system buttons geometry customization
-- Simpler APIs, more detailed documentations and comments
+## Modules
 
-## Gallery
+- `QWKCore`: native window contexts, frame hit testing, window movement, resizing, and shared
+  system-button state.
+- `QWKWidgets`: `QWidget` integration, multiple title-bar regions, Windows caption controls, and
+  macOS traffic-light geometry.
+- `QWKQuick`: Qt Quick integration over the same Core window contexts.
 
-### Windows 11 (With Snap Layout)
+## Current Features
 
-![image](./docs/images/win11.png)
-
-### Windows 10 (And 7, Vista)
-
-![image](./docs/images/win10.png)
-
-### macOS
-
-![image](./docs/images/mac.png)
-
-|                                default                                |                                  glass - regular                                  |
-|:---------------------------------------------------------------------:|:---------------------------------------------------------------------------------:|
-| ![default](./docs/images/macos/01%20default.png)                      | ![glass - regular](./docs/images/macos/02%20glass%20-%20regular.png)              |
-|                              glass - clear                            |                         glass - regular, rounded                                  |
-| ![glass - clear](./docs/images/macos/03%20glass%20-%20clear.png)      | ![glass - regular, rounded](./docs/images/macos/04%20glass%20-%20regular,%20rounded.png) |
-|                       glass - regular, dark tint                      |                         glass - regular, light tint                               |
-| ![glass - regular, dark tint](./docs/images/macos/05%20glass%20-%20regular,%20dark%20tint.png) | ![glass - regular, light tint](./docs/images/macos/06%20glass%20-%20regular,%20light%20tint.png) |
-|                           legacy - dark blur                          |                              legacy - light blur                                  |
-| ![legacy - dark blur](./docs/images/macos/07%20legacy%20-%20dark%20blur.png) | ![legacy - light blur](./docs/images/macos/08%20legacy%20-%20light%20blur.png) |
-
-### Linux
-
-![image](./docs/images/linux.png)
+- Frameless content extending to the top of the native window.
+- Multiple draggable title-bar widgets in one window.
+- Explicit interactive regions, including sibling widgets such as `QSplitterHandle`.
+- Native system movement and resizing.
+- Windows 11 Snap Layout support through `HTMAXBUTTON` hit-test results.
+- Framework-managed Windows minimize, maximize/restore, and close buttons fixed to the top-right
+  corner.
+- Native macOS traffic lights obtained from `NSWindow::standardWindowButton`.
+- Adjustable macOS traffic-light placement without a placeholder widget in application code.
+- Three system-button visibility policies: always visible, visible on hover, and always hidden.
+- Optional Windows 10 top-border handling and platform style effects.
 
 ## Requirements
 
-| Component | Requirement |          Details          |
-|:---------:|:-----------:|:-------------------------:|
-|    Qt     |   \>=5.12   | Core, Gui, Widgets, Quick |
-| Compiler  |  \>=C++17   |   MSVC 2019, GCC, Clang   |
-|   CMake   |   \>=3.19   |   >=3.20 is recommended   |
+- CMake 3.19 or newer. The Notes demo requires CMake 3.21 or newer.
+- C++20 for this source tree.
+- Qt 5.15.2 or newer, or Qt 6.6.2 or newer.
+- The Notes demo currently uses Qt 6.10.
+- MSVC 2019/2022, a recent Apple Clang, or a recent GCC/Clang toolchain.
 
-Please read [Vulnerabilities](#Vulnerabilities) carefully to acquire detailed requirements.
+## Build
 
-### Tested Compilers
-
-- Windows
-    - MSVC: 2019, 2022
-    - MinGW (GCC): 13.2.0
-- macOS
-    - Clang 14.0.3
-- Ubuntu
-    - GCC: 9.4.0
-
-## Dependencies
-
-- Qt 5.12 or higher
-- [qmsetup](https://github.com/stdware/qmsetup)
-
-## Integrate
-
-### Build & Install
+Clone the repository with its submodules, then configure and build it with CMake:
 
 ```sh
-git clone --recursive https://github.com/stdware/qwindowkit
+git clone --recursive https://github.com/stdware/qwindowkit.git
 cd qwindowkit
 
-cmake -B build -S . \
-  -DCMAKE_PREFIX_PATH=<QT_DIR> \
-  -Dqmsetup_DIR=<dir> \             # Optional
-  -DQWINDOWKIT_BUILD_QUICK=TRUE \   # Optional
-  -DCMAKE_INSTALL_PREFIX=/path/install \
-  -G "Ninja Multi-Config"
+cmake -S . -B build \
+  -DCMAKE_PREFIX_PATH=/path/to/Qt \
+  -DQWINDOWKIT_BUILD_WIDGETS=ON \
+  -DQWINDOWKIT_BUILD_QUICK=OFF \
+  -DQWINDOWKIT_BUILD_EXAMPLES=ON
 
-cmake --build build --target install --config Debug
-cmake --build build --target install --config Release
-```
-Read the root `CMakeLists.txt` for more build options.
-
-You can also include this directory as a subproject if you choose CMake as your build system.
-
-For other build systems, you need to install with CMake first and include the corresponding configuration files in your project.
-
-### Import
-
-#### CMake Project
-
-```sh
-cmake -B build -DQWindowKit_DIR=/path/install/lib/cmake/QWindowKit
+cmake --build build --config Release
 ```
 
-```cmake
-find_package(QWindowKit COMPONENTS Core Widgets Quick REQUIRED)
-target_link_libraries(widgets_app PUBLIC QWindowKit::Widgets)
-target_link_libraries(quick_app PUBLIC QWindowKit::Quick)
-```
+Important build options:
 
-#### QMake Project
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `QWINDOWKIT_BUILD_STATIC` | `OFF` | Build static libraries instead of shared libraries |
+| `QWINDOWKIT_BUILD_WIDGETS` | `ON` | Build `QWKWidgets` |
+| `QWINDOWKIT_BUILD_QUICK` | `OFF` | Build `QWKQuick` |
+| `QWINDOWKIT_BUILD_EXAMPLES` | `ON` | Build the Notes multi-titlebar demo |
+| `QWINDOWKIT_ENABLE_WINDOWS_SYSTEM_BORDERS` | `ON` | Enable the Windows system-border integration |
+| `QWINDOWKIT_ENABLE_STYLE_AGENT` | `ON` | Build platform style effects |
+| `QWINDOWKIT_FORCE_QT_WINDOW_CONTEXT` | `OFF` | Use the portable Qt fallback context |
 
-```cmake
-# WidgetsApp.pro
-include("/path/install/share/QWindowKit/qmake/QWKWidgets.pri")
+## Qt Widgets Quick Start
 
-# QuickApp.pro
-include("/path/install/share/QWindowKit/qmake/QWKQuick.pri")
-```
-
-#### Visual Studio Project
-
-See [Visual Studio Guide](./docs/visual-studio-guide.md) for detailed usages.
-
-## Quick Start
-
-### Qt Widgets Application
-
-#### Initialization
-
-The following initialization should be done before any widget constructs.
+Create one agent for each top-level widget and install the platform controls:
 
 ```cpp
-#include <QtWidgets/QApplication>
-
-int main(int argc, char *argv[])
-{
-    QGuiApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings)
-    
-    // ...
-}
-```
-
-#### Setup Window Agent
-
-First, setup `WidgetWindowAgent` for your top `QWidget` instance. (Each window needs its own agent.)
-
-```c++
 #include <QWKWidgets/widgetwindowagent.h>
 
-MyWidget::MyWidget(QWidget *parent) {
-    // ...
-    auto agent = new QWK::WidgetWindowAgent(this);
-    agent->setup(this);
-    // ...
-}
+auto *agent = new QWK::WidgetWindowAgent(window);
+agent->setup(window);
+agent->installSystemButtons();
 ```
 
-If you don't want to derive a new widget class or change the constructor, you can initialize the agent after the window
-constructs.
+On Windows, `installSystemButtons()` creates the minimize, maximize/restore, and close controls,
+fixes them to the top-right corner, binds their window actions, and registers their native caption
+roles. Applications should reserve `agent->systemButtonAreaGeometry()` in their top title-bar
+layout. On macOS, AppKit continues to own and draw the native traffic lights.
 
-```c++
-auto w = new MyWidget();
-auto agent = new QWK::WidgetWindowAgent(w);
-agent->setup(w);
-```
-
-You should call `QWK::WidgetWindowAgent::setup()` as early as possible, especially when you need to set the size constrains. QWindowKit will change some Qt internal data which will affect how Qt calculates the window size, and thus you need to let QWindowKit initialize at the very beginning.
-
-#### Construct Title bar
-
-Then, construct your title bar widget, without which the window lacks the basic interaction feature, and it's better to
-put it into the window's layout.
-
-You can use the [`WindowBar`](examples/shared/widgetframe/windowbar.h) provided by `WidgetFrame` in the examples as the
-container of your title bar components.
-
-Let `WidgetWindowAgent` know which widget the title bar is.
-
-```c++
-agent->setTitleBar(myTitleBar);
-```
-
-Next, set system button hints to let `WidgetWindowAgent` know the role of the child widgets, which is important for the
-Snap Layout to work.
-
-```c++
-agent->setSystemButton(QWK::WindowAgentBase::WindowIcon, myTitleBar->iconButton());
-agent->setSystemButton(QWK::WindowAgentBase::Minimize, myTitleBar->minButton());
-agent->setSystemButton(QWK::WindowAgentBase::Maximize, myTitleBar->maxButton());
-agent->setSystemButton(QWK::WindowAgentBase::Close, myTitleBar->closeButton());
-```
-
-Doing this does not mean that these buttons' click events are automatically associated with window actions, you still need to manually connect the signals and slots to emulate the native window behaviors.
-
-On macOS, this step can be skipped because it is better to use the buttons provided by the system.
-
-Last but not least, set hit-test visible hint to let `WidgetWindowAgent` know which widgets are willing to receive mouse events.
-
-```c++
-agent->setHitTestVisible(myTitleBar->menuBar(), true);
-```
-
-The rest region within the title bar will be regarded as the draggable area for the user to move the window, and thus any QWidgets inside it will not receive any user interaction events such as mouse events/focus events/etc anymore, but you can still send/post such events to these widgets manually, either through Qt API or system API.
-
-- If you want to disable window maximization, you can remove the `Qt::WindowMaximizeButtonHint` flag from the window.
-
-<!-- #### Window Attributes (Experimental)
-
-On Windows 11, you can use this API to enable system effects.
-
-```c++
-agent->setWindowAttribute("mica", true);
-```
-
-Available keys: `mica`, `mica-alt`, `acrylic`, `dark-mode`. -->
-
-### Qt Quick Application
-
-#### Initialization
-
-Make sure you have registered `QWindowKit` into QtQuick:
+Register one or more title-bar widgets:
 
 ```cpp
-#include <QWKQuick/qwkquickglobal.h>
-
-int main(int argc, char *argv[])
-{
-    // ...
-    QQmlApplicationEngine engine;
-    // ...
-    QWK::registerTypes(&engine);
-    // ...
-}
+agent->addTitleBar(folderTitleBar);
+agent->addTitleBar(listTitleBar);
+agent->addTitleBar(editorTitleBar);
 ```
 
-#### Setup Window Components
+Mark every control that must receive pointer input inside a draggable title-bar region:
 
-Then you can use `QWindowKit` data types and classes by importing its URI:
-
-```qml
-import QtQuick 2.15
-import QtQuick.Window 2.15
-import QWindowKit 1.0
-
-Window {
-    id: window
-    visible: false // We hide it first, so we can move the window to our desired position silently.
-    Component.onCompleted: {
-        windowAgent.setup(window)
-        window.visible = true
-    }
-    WindowAgent {
-        id: windowAgent
-        // ...
-    }
-}
+```cpp
+agent->setHitTestVisible(folderTitleBar, addButton, true);
+agent->setHitTestVisible(folderTitleBar, splitter->handle(1), true);
+agent->setHitTestVisible(listTitleBar, splitter->handle(1), true);
 ```
 
-You can omit the version number or use "auto" instead of "1.0" for the module URI if you are using Qt6.
+The explicit title-bar overload accepts both descendants and sibling controls as long as they
+belong to the same top-level window. This lets a visually narrow `QSplitterHandle` keep Qt's normal
+drag behavior inside the title-bar band.
 
-As we just mentioned above, if you are going to set the size constrains, please do it after `windowAgent.setup()` is called.
+## System Button Visibility
 
-### Learn More
+The same API controls native macOS traffic lights and registered QWidget caption buttons:
 
-See [examples](examples) for more demo use cases. The examples have no High DPI support.
+```cpp
+agent->setSystemButtonVisibility(QWK::WindowAgentBase::AlwaysVisible);
+agent->setSystemButtonVisibility(QWK::WindowAgentBase::VisibleOnHover);
+agent->setSystemButtonVisibility(QWK::WindowAgentBase::AlwaysHidden);
+```
 
-- QWindowKit Internals [TODO]
-- [FramelessHelper Related](docs/framelesshelper-related.md)
+On Windows, hidden hover-mode buttons retain their native hit-test geometry so the maximize button
+continues to return `HTMAXBUTTON` and Snap Layout remains available.
 
+## macOS Traffic-Light Geometry
 
-### Vulnerabilities
+macOS builds expose a geometry setter that positions the native AppKit buttons without requiring a
+dummy `QWidget`:
 
-#### Qt Version
-- To achieve better frameless functionality, QWindowKit depends heavily on Qt's internal implementation. However, there are many differences in different versions of Qt, and earlier versions of Qt5 and Qt6 have many bugs which make it extremely difficult for QWindowKit to workaround without changing the Qt source code.
-- And also due to limited manpower, although QWindowKit can be successfully compiled on Qt 5.12 or later, it can hardly work perfectly on all Qt versions.
-- Therefore, the following Qt version ranges are recommended, if there are any exceptions with QWindowKit in your application, make sure the Qt version you use is in the ranges before raising the issue.
-    - Qt 5: 5.15.2 or higher (you may be able to build QWK on top of older Qt versions, however, QWK may not behave well and we won't accept bug reports from these unsupported versions)
-    - Qt 6: 6.6.2 or higher (the newer, the better)
+```cpp
+#ifdef Q_OS_MAC
+agent->setSystemButtonAreaGeometry(QRect(2, 10, 72, 32));
+#endif
+```
 
-#### Hot Switch
-- Once you have made the window frameless, it will not be able to switch back to the system frame again unless you destroy your window and recreate it with different settings.
+QWindowKit centers the native buttons in this rectangle. The placement is replayed after AppKit's
+initial window layout and after native window updates, so the first displayed frame uses the
+requested geometry.
 
-- Do not use `QWidget::setWindowFlags` to change the window flags after `windowAgent.setup()` is called. As a result, `QWK::WidgetWindowAgent` can not be setup on `QDockWidget`.
+The older widget and callback placement APIs remain available for applications that need geometry
+tied to a live widget or calculated from the native title-bar size.
 
-#### Native Child Widget
-- If you are about to add a widget with `Qt::WA_NativeWindow` property enabled as a descendent of the frameless window, you should enable `Qt::WA_DontCreateNativeAncestors` of it in advance.
+## Notes Multi-Titlebar Demo
 
-#### Size Constrains
-- If you want to disable window resizing, you can set a fixed size, which is officially supported by QWindowKit. If you use other special means to achieve this (eg. hook Win32 messages), QWK doesn't guarantee everything can still be fully functional.
-- If you set a maximized width or height, the window should not be maximized because you cannot get the correct window size through Qt APIs. You may workaround this by using system APIs such as `GetWindowRect` or `GetClientRect`. The root cause lies deep in Qt QPA implementations and currently we don't know how to fix it without modifying Qt itself.
+`notes-multi-titlebar-demo` demonstrates three draggable pane headers, splitter interaction inside
+the title-bar band, folder-panel collapse behavior, and live system-button visibility controls.
 
-#### Windows 10
-- Due to the inherent defects in the Windows 10 window system, the top border will disappear when the system title bar is removed. We have filtered Qt's event and perfectly reshown the system top border, thanks to the implementation of Windows Terminal for our reference. However, this workaround only works with QtWidgets and QtQuick (**only when rendering through OpenGL/D3D11/D3D12, not Vulkan**) applications.
-- For QtQuick applications, when rendering through Vulkan, the top border will become a solid black line, that's a known issue and currently we are not able to fix it. Please use QWK's borderless version if you can't change your graphics backend.
-- For QtQuick applications, when rendering through D3D11/D3D12, you may see a strange white line on window top, it may disappear if you resize the window. Currently it's a bug and we are working hard to find a suitable solution for it, for now you can set the environment variable `QT_QPA_DISABLE_REDIRECTION_SURFACE` to a non-zero value in your `main` function before any `QCoreApplication` instance is created to workaround this issue. This environment variable is first introduced in Qt 6.7.0 (qtbase/838fc606c170fac112f7bb5971c2507b7b56d08a). You must **NOT** enable this feature for OpenGL/Vulkan because their rendering will be totally broken.
+The demo is divided into:
 
-## TODO
+- `mainwindow.cpp`: platform-neutral Notes layout and behavior.
+- `mainwindow_mac.cpp`: traffic-light placement controls and macOS chrome metrics.
+- `mainwindow_win.cpp`: Windows layout reservations for framework-owned caption buttons.
+- `mainwindow_generic.cpp`: fallback desktop metrics.
+- `demostyle.cpp`: the shared macOS-inspired visual style.
 
-- Fix mouse cursor mapping issues
-- More documentations
-- When do we support Linux native features?
+CMake compiles exactly one `mainwindow_<platform>.cpp` file.
 
-## Special Thanks
+## Integration Notes
 
-- [Maplespe](https://github.com/Maplespe)
-- [zhiyiYo](https://github.com/zhiyiYo)
+- Call `WidgetWindowAgent::setup()` before creating native child widgets or applying final size
+  constraints.
+- Set `Qt::AA_DontCreateNativeWidgetSiblings` before constructing `QApplication` when the
+  application may contain native child widgets.
+- Do not change top-level window flags after agent setup unless the window is recreated.
+- Keep interactive title-bar controls registered with `setHitTestVisible()`.
+- A maximize button must remain registered as `WindowAgentBase::Maximize` for Windows Snap Layout.
+
+## Platform References
+
+- [Apple: `NSWindow::standardWindowButton`](https://developer.apple.com/documentation/appkit/nswindow/standardwindowbutton%28_%3A%29)
+- [Apple: `NSWindow::layoutIfNeeded`](https://developer.apple.com/documentation/appkit/nswindow/layoutifneeded%28%29)
+- [Apple: `NSTrackingArea`](https://developer.apple.com/documentation/appkit/nstrackingarea)
+- [Microsoft: Support Snap Layouts for desktop apps](https://learn.microsoft.com/windows/apps/desktop/modernize/ui/apply-snap-layout-menu)
+- [Microsoft: `WM_NCHITTEST`](https://learn.microsoft.com/windows/win32/inputdev/wm-nchittest)
+- [Qt: `QSplitter`](https://doc.qt.io/qt-6/qsplitter.html)
+- [Qt: `QWindow`](https://doc.qt.io/qt-6/qwindow.html)
 
 ## License
 
-QWindowKit is licensed under the [Apache 2.0 License](./LICENSE).
-
-<!--
-
-**You MUST keep a copyright notice of QWindowKit in a prominent place on your project, such as the README document and the About Dialog.**
-
-**You MUST NOT remove the license text from the header files and source files of QWindowKit.**
-
--->
+QWindowKit is licensed under the [Apache License 2.0](LICENSE).

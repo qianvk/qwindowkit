@@ -50,11 +50,19 @@ namespace QWK {
 
         bool isHitTestVisible(QObject *titleBar, const QObject *obj) const;
         bool setHitTestVisible(QObject *titleBar, QObject *obj, bool visible);
+        bool isHitTestVisible(const QObject *obj) const;
+        bool setHitTestVisible(QObject *obj, bool visible);
 
         inline QObject *systemButton(WindowAgentBase::SystemButton button) const;
         bool setSystemButton(WindowAgentBase::SystemButton button, QObject *obj);
 
+        inline WindowAgentBase::SystemButtonVisibility systemButtonVisibility() const;
+        bool setSystemButtonVisibility(WindowAgentBase::SystemButtonVisibility visibility);
+
         QList<QObject *> titleBars() const;
+
+        QObject *titleBar() const;
+        bool setTitleBar(QObject *titleBar);
 
         bool addTitleBar(QObject *titleBar);
         bool removeTitleBar(QObject *titleBar);
@@ -84,6 +92,7 @@ namespace QWK {
             DrawWindows10BorderHook_Emulated, // Only works on Windows 10, emulated workaround
             DrawWindows10BorderHook_Native,   // Only works on Windows 10, native workaround
             SystemButtonAreaChangedHook,      // Only works on Mac
+            SystemButtonVisibilityChangedHook,
         };
         virtual void virtual_hook(int id, void *data);
 
@@ -112,18 +121,15 @@ namespace QWK {
             QVector<QPointer<QObject>> hitTestVisibleItems;
         };
 
-        /*
-            A hit-test-visible item is meaningful only inside the title bar that owns it.
-
-             Keeping hit-test items together with their owner title bar avoids stale global
-             state and makes title bar removal deterministic: removing a title bar removes
-             all interactive exceptions registered for that title bar.
-         */
+        // Keeping exclusions with their owning title bar makes title bar removal deterministic.
+        // An exclusion may be a sibling control when it overlaps that title bar.
         QVector<TitleBarRecord> m_titleBars;
 #ifdef Q_OS_MAC
         ScreenRectCallback m_systemButtonAreaCallback;
 #endif
         std::array<QPointer<QObject>, WindowAgentBase::Close + 1> m_systemButtons{};
+        WindowAgentBase::SystemButtonVisibility m_systemButtonVisibility =
+            WindowAgentBase::AlwaysVisible;
 
         std::list<std::pair<QString, QVariant>> m_windowAttributesOrder;
         QHash<QString, decltype(m_windowAttributesOrder)::iterator> m_windowAttributes;
@@ -153,6 +159,11 @@ namespace QWK {
     inline QObject *
         AbstractWindowContext::systemButton(WindowAgentBase::SystemButton button) const {
         return m_systemButtons[button];
+    }
+
+    inline WindowAgentBase::SystemButtonVisibility
+        AbstractWindowContext::systemButtonVisibility() const {
+        return m_systemButtonVisibility;
     }
 
 #ifdef Q_OS_MAC

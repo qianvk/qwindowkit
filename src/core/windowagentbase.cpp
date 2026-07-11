@@ -84,6 +84,28 @@ namespace QWK {
     WindowAgentBase::~WindowAgentBase() = default;
 
     /*!
+        Returns the visibility policy for native or registered system buttons.
+    */
+    WindowAgentBase::SystemButtonVisibility WindowAgentBase::systemButtonVisibility() const {
+        Q_D(const WindowAgentBase);
+        return d->context->systemButtonVisibility();
+    }
+
+    /*!
+        Sets the visibility policy for native or registered system buttons.
+
+        On macOS this controls the native traffic-light buttons. WidgetWindowAgent also applies
+        the policy to registered QWidget caption buttons on platforms such as Windows.
+    */
+    void WindowAgentBase::setSystemButtonVisibility(SystemButtonVisibility visibility) {
+        Q_D(WindowAgentBase);
+        if (!d->context->setSystemButtonVisibility(visibility)) {
+            return;
+        }
+        Q_EMIT systemButtonVisibilityChanged(visibility);
+    }
+
+    /*!
         Returns the window attribute value.
 
         \sa setWindowAttribute()
@@ -120,8 +142,8 @@ namespace QWK {
                    height to this value. (Readonly)
 
         On macOS,
-            \li \c no-system-buttons: Specify a boolean value to set the system buttons'
-                   visibility.
+            \li \c no-system-buttons: Legacy boolean attribute for hiding the system buttons.
+                   Prefer setSystemButtonVisibility().
             \li \c blur-effect: You can specify a string value, "dark" to enable dark mode, "light"
                    to set enable mode, "none" to disable. You can also specify a boolean value,
                    \c true to enable current theme mode, \c false to disable.

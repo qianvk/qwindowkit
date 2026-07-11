@@ -32,6 +32,12 @@ namespace QWK {
         return QRectF(originPoint, size).toRect();
     }
 
+    bool QuickItemDelegate::isInHostWindow(const QObject *obj, const QObject *host) const {
+        const auto *item = qobject_cast<const QQuickItem *>(obj);
+        const auto *hostWindow = qobject_cast<const QQuickWindow *>(host);
+        return item && hostWindow && item->window() == hostWindow;
+    }
+
     QWindow *QuickItemDelegate::hostWindow(const QObject *host) const {
         return static_cast<QQuickWindow *>(const_cast<QObject *>(host));
     }

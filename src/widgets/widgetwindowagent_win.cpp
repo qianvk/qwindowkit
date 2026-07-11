@@ -4,17 +4,258 @@
 
 #include "widgetwindowagent_p.h"
 
-#include <QtCore/QDebug>
-#include <QtCore/QDateTime>
+#include <algorithm>
+
+#include <QtCore/QCoreApplication>
+#include <QtCore/QEvent>
+#include <QtCore/QPointer>
+#include <QtGui/QIcon>
 #include <QtGui/QPainter>
+#include <QtWidgets/QHBoxLayout>
+#include <QtWidgets/QPushButton>
 
-#include <QtCore/private/qcoreapplication_p.h>
+#if QWINDOWKIT_CONFIG(ENABLE_WINDOWS_SYSTEM_BORDERS)
+#  include <QtCore/private/qcoreapplication_p.h>
+#  include <QWKCore/private/qwkglobal_p.h>
+#  include <QWKCore/private/windows10borderhandler_p.h>
+#endif
 
-#include <QWKCore/qwindowkit_windows.h>
-#include <QWKCore/private/qwkglobal_p.h>
-#include <QWKCore/private/windows10borderhandler_p.h>
+static void initializeWindowsCaptionButtonResources() {
+    Q_INIT_RESOURCE(windows_caption_buttons);
+}
 
 namespace QWK {
+
+    namespace {
+
+        constexpr int kCaptionButtonWidth = 46;
+        constexpr int kCaptionButtonHeight = 32;
+        constexpr int kCaptionButtonCount = 3;
+
+        enum class CaptionButtonRole {
+            Minimize,
+            Maximize,
+            Close,
+        };
+
+        class WindowsCaptionButton final : public QPushButton {
+        public:
+            explicit WindowsCaptionButton(CaptionButtonRole role, QWidget *parent = nullptr)
+                : QPushButton(parent), m_role(role) {
+                setFocusPolicy(Qt::NoFocus);
+                setFlat(true);
+                setCursor(Qt::ArrowCursor);
+                setFixedSize(kCaptionButtonWidth, kCaptionButtonHeight);
+                setIconSize(role == CaptionButtonRole::Maximize ? QSize(12, 12)
+                                                                 : QSize(11, 11));
+
+                switch (role) {
+                    case CaptionButtonRole::Minimize:
+                        m_icon = QIcon(QStringLiteral(
+                            ":/qwindowkit/widgets/windows/caption/minimize.svg"));
+                        setToolTip(tr("Minimize"));
+                        setAccessibleName(tr("Minimize"));
+                        break;
+                    case CaptionButtonRole::Maximize:
+                        m_icon = QIcon(QStringLiteral(
+                            ":/qwindowkit/widgets/windows/caption/maximize.svg"));
+                        m_checkedIcon = QIcon(QStringLiteral(
+                            ":/qwindowkit/widgets/windows/caption/restore.svg"));
+                        setToolTip(tr("Maximize"));
+                        setAccessibleName(tr("Maximize"));
+                        break;
+                    case CaptionButtonRole::Close:
+                        m_icon = QIcon(QStringLiteral(
+                            ":/qwindowkit/widgets/windows/caption/close.svg"));
+                        setToolTip(tr("Close"));
+                        setAccessibleName(tr("Close"));
+                        break;
+                }
+            }
+
+            void setMaximized(bool maximized) {
+                if (m_maximized == maximized) {
+                    return;
+                }
+                m_maximized = maximized;
+                setToolTip(maximized ? tr("Restore Down") : tr("Maximize"));
+                setAccessibleName(toolTip());
+                update();
+            }
+
+        protected:
+            void paintEvent(QPaintEvent *event) override {
+                Q_UNUSED(event)
+
+                QPainter painter(this);
+                const bool hovered = underMouse();
+                const bool pressed = isDown();
+                const bool closeButton = m_role == CaptionButtonRole::Close;
+
+                if (hovered || pressed) {
+                    QColor background;
+                    if (closeButton) {
+                        background = pressed ? QColor(196, 43, 28) : QColor(232, 17, 35);
+                    } else {
+                        const bool dark = palette().window().color().lightness() < 128;
+                        background = dark ? QColor(255, 255, 255, pressed ? 36 : 24)
+                                          : QColor(0, 0, 0, pressed ? 34 : 20);
+                    }
+                    painter.fillRect(rect(), background);
+                }
+
+                QColor glyphColor = palette().windowText().color();
+                if (closeButton && (hovered || pressed)) {
+                    glyphColor = Qt::white;
+                } else if (!isEnabled()) {
+                    glyphColor.setAlpha(90);
+                } else if (window() && !window()->isActiveWindow()) {
+                    glyphColor.setAlpha(150);
+                }
+
+                const QIcon &icon = m_maximized && !m_checkedIcon.isNull()
+                                        ? m_checkedIcon
+                                        : m_icon;
+                QPixmap glyph = icon.pixmap(iconSize());
+                if (!glyph.isNull()) {
+                    QPainter glyphPainter(&glyph);
+                    glyphPainter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+                    glyphPainter.fillRect(glyph.rect(), glyphColor);
+                    glyphPainter.end();
+
+                    const qreal dpr = glyph.devicePixelRatio();
+                    const QSize logicalSize(qRound(glyph.width() / dpr),
+                                            qRound(glyph.height() / dpr));
+                    const QPoint origin((width() - logicalSize.width()) / 2,
+                                        (height() - logicalSize.height()) / 2);
+                    painter.drawPixmap(origin, glyph);
+                }
+            }
+
+        private:
+            CaptionButtonRole m_role;
+            QIcon m_icon;
+            QIcon m_checkedIcon;
+            bool m_maximized = false;
+        };
+
+        class WindowsCaptionButtonBar final : public QWidget {
+        public:
+            explicit WindowsCaptionButtonBar(QWidget *host)
+                : QWidget(host), m_host(host) {
+                setObjectName(QStringLiteral("qwkWindowsCaptionButtonBar"));
+                setAttribute(Qt::WA_StyledBackground, false);
+                setFixedSize(kCaptionButtonWidth * kCaptionButtonCount,
+                             kCaptionButtonHeight);
+
+                auto *layout = new QHBoxLayout(this);
+                layout->setContentsMargins(0, 0, 0, 0);
+                layout->setSpacing(0);
+
+                m_minimizeButton = new WindowsCaptionButton(
+                    CaptionButtonRole::Minimize, this);
+                m_maximizeButton = new WindowsCaptionButton(
+                    CaptionButtonRole::Maximize, this);
+                m_closeButton = new WindowsCaptionButton(CaptionButtonRole::Close, this);
+
+                layout->addWidget(m_minimizeButton);
+                layout->addWidget(m_maximizeButton);
+                layout->addWidget(m_closeButton);
+
+                host->installEventFilter(this);
+                updateFromHost();
+            }
+
+            WindowsCaptionButton *minimizeButton() const { return m_minimizeButton; }
+            WindowsCaptionButton *maximizeButton() const { return m_maximizeButton; }
+            WindowsCaptionButton *closeButton() const { return m_closeButton; }
+
+            void updateFromHost() {
+                if (!m_host) {
+                    return;
+                }
+
+                move(std::max(0, m_host->width() - width()), 0);
+                m_maximizeButton->setMaximized(m_host->isMaximized());
+
+                const Qt::WindowFlags flags = m_host->windowFlags();
+                m_minimizeButton->setEnabled(flags.testFlag(Qt::WindowMinimizeButtonHint));
+                m_maximizeButton->setEnabled(flags.testFlag(Qt::WindowMaximizeButtonHint) &&
+                                              m_host->minimumSize() != m_host->maximumSize());
+                m_closeButton->setEnabled(flags.testFlag(Qt::WindowCloseButtonHint));
+                raise();
+            }
+
+        protected:
+            bool eventFilter(QObject *watched, QEvent *event) override {
+                if (watched != m_host) {
+                    return false;
+                }
+
+                switch (event->type()) {
+                    case QEvent::Show:
+                    case QEvent::Resize:
+                    case QEvent::WindowStateChange:
+                    case QEvent::WindowActivate:
+                    case QEvent::WindowDeactivate:
+                    case QEvent::PaletteChange:
+                        updateFromHost();
+                        update();
+                        break;
+                    default:
+                        break;
+                }
+                return false;
+            }
+
+        private:
+            QPointer<QWidget> m_host;
+            WindowsCaptionButton *m_minimizeButton = nullptr;
+            WindowsCaptionButton *m_maximizeButton = nullptr;
+            WindowsCaptionButton *m_closeButton = nullptr;
+        };
+
+    }
+
+    bool WidgetWindowAgentPrivate::installPlatformSystemButtons() {
+        if (!hostWidget) {
+            return false;
+        }
+        if (windowsSystemButtonBar) {
+            return true;
+        }
+
+        initializeWindowsCaptionButtonResources();
+        auto *bar = new WindowsCaptionButtonBar(hostWidget);
+        windowsSystemButtonBar = bar;
+
+        Q_Q(WidgetWindowAgent);
+        q->setSystemButton(WindowAgentBase::Minimize, bar->minimizeButton());
+        q->setSystemButton(WindowAgentBase::Maximize, bar->maximizeButton());
+        q->setSystemButton(WindowAgentBase::Close, bar->closeButton());
+
+        QObject::connect(bar->minimizeButton(), &QPushButton::clicked,
+                         hostWidget, &QWidget::showMinimized);
+        QObject::connect(
+            bar->maximizeButton(), &QPushButton::clicked, hostWidget,
+            [host = QPointer<QWidget>(hostWidget), button = bar->maximizeButton()]() {
+                if (!host) {
+                    return;
+                }
+                host->isMaximized() ? host->showNormal() : host->showMaximized();
+                QCoreApplication::postEvent(button, new QEvent(QEvent::Leave));
+            });
+        QObject::connect(bar->closeButton(), &QPushButton::clicked,
+                         hostWidget, &QWidget::close);
+
+        bar->show();
+        bar->updateFromHost();
+        return true;
+    }
+
+    QRect WidgetWindowAgentPrivate::platformSystemButtonAreaGeometry() const {
+        return windowsSystemButtonBar ? windowsSystemButtonBar->geometry() : QRect();
+    }
 
 #if QWINDOWKIT_CONFIG(ENABLE_WINDOWS_SYSTEM_BORDERS)
     // https://github.com/qt/qtbase/blob/e26a87f1ecc40bc8c6aa5b889fce67410a57a702/src/plugins/platforms/windows/qwindowsbackingstore.cpp#L42

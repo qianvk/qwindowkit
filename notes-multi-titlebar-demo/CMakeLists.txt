@@ -14,15 +14,25 @@ find_package(Qt6 6.10 REQUIRED COMPONENTS Core Gui Widgets)
 
 qt_standard_project_setup()
 
-qt_add_executable(NotesMultiTitlebarDemo WIN32
+set(_demo_sources
     src/main.cpp
     src/mainwindow.h
     src/mainwindow.cpp
+    src/demostyle.h
+    src/demostyle.cpp
     src/sidebartogglebutton.h
     src/sidebartogglebutton.cpp
-    src/captionbuttonstrip.h
-    src/captionbuttonstrip.cpp
 )
+
+if(WIN32)
+    list(APPEND _demo_sources src/mainwindow_win.cpp)
+elseif(APPLE)
+    list(APPEND _demo_sources src/mainwindow_mac.cpp)
+else()
+    list(APPEND _demo_sources src/mainwindow_generic.cpp)
+endif()
+
+qt_add_executable(NotesMultiTitlebarDemo WIN32 ${_demo_sources})
 
 target_link_libraries(NotesMultiTitlebarDemo
     PRIVATE
@@ -32,8 +42,9 @@ target_link_libraries(NotesMultiTitlebarDemo
         QWindowKit::Widgets
 )
 
-target_compile_definitions(NotesMultiTitlebarDemo
-    PRIVATE
+if(WIN32)
+    target_compile_definitions(NotesMultiTitlebarDemo PRIVATE
         WIN32_LEAN_AND_MEAN
         NOMINMAX
-)
+    )
+endif()
