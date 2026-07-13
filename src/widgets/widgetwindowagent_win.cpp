@@ -100,18 +100,6 @@ namespace QWK {
                 Q_UNUSED(event)
 
                 QPainter painter(this);
-                const qreal cornerRadius =
-                    property("_qwk_top_right_corner_radius").toReal();
-                if (m_role == CaptionButtonRole::Close && cornerRadius > 0.0) {
-                    QPainterPath clipPath;
-                    clipPath.moveTo(0.0, 0.0);
-                    clipPath.lineTo(width() - cornerRadius, 0.0);
-                    clipPath.quadTo(width(), 0.0, width(), cornerRadius);
-                    clipPath.lineTo(width(), height());
-                    clipPath.lineTo(0.0, height());
-                    clipPath.closeSubpath();
-                    painter.setClipPath(clipPath);
-                }
                 const bool hovered = underMouse();
                 const bool pressed = isDown();
                 const bool closeButton = m_role == CaptionButtonRole::Close;
@@ -125,7 +113,21 @@ namespace QWK {
                         background = dark ? QColor(255, 255, 255, pressed ? 36 : 24)
                                           : QColor(0, 0, 0, pressed ? 34 : 20);
                     }
-                    painter.fillRect(rect(), background);
+                    const qreal cornerRadius =
+                        property("_qwk_top_right_corner_radius").toReal();
+                    if (closeButton && cornerRadius > 0.0) {
+                        painter.setRenderHint(QPainter::Antialiasing, true);
+                        QPainterPath hoverPath;
+                        hoverPath.moveTo(0.0, 0.0);
+                        hoverPath.lineTo(width() - cornerRadius, 0.0);
+                        hoverPath.quadTo(width(), 0.0, width(), cornerRadius);
+                        hoverPath.lineTo(width(), height());
+                        hoverPath.lineTo(0.0, height());
+                        hoverPath.closeSubpath();
+                        painter.fillPath(hoverPath, background);
+                    } else {
+                        painter.fillRect(rect(), background);
+                    }
                 }
 
                 QColor glyphColor = palette().windowText().color();
