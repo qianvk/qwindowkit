@@ -14,6 +14,8 @@
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QPushButton>
 
+#include <QWKCore/qwindowkit_windows.h>
+
 #if QWINDOWKIT_CONFIG(ENABLE_WINDOWS_SYSTEM_BORDERS)
 #  include <QtCore/private/qcoreapplication_p.h>
 #  include <QWKCore/private/qwkglobal_p.h>
@@ -38,6 +40,20 @@ namespace QWK {
             Close,
         };
 
+        HWND windowHandleForWidget(QWidget *widget) {
+            if (!widget) {
+                return nullptr;
+            }
+            return reinterpret_cast<HWND>(widget->window()->winId());
+        }
+
+        void postSystemCommand(QWidget *host, WPARAM command) {
+            if (const auto hwnd = windowHandleForWidget(host)) {
+                // Use the same native command path as non-client caption buttons.
+                ::PostMessageW(hwnd, WM_SYSCOMMAND, command, 0);
+            }
+        }
+
         class WindowsCaptionButton final : public QPushButton {
         public:
             explicit WindowsCaptionButton(CaptionButtonRole role, QWidget *parent = nullptr)
@@ -53,7 +69,6 @@ namespace QWK {
                     case CaptionButtonRole::Minimize:
                         m_icon = QIcon(QStringLiteral(
                             ":/qwindowkit/widgets/windows/caption/minimize.svg"));
-                        setToolTip(tr("Minimize"));
                         setAccessibleName(tr("Minimize"));
                         break;
                     case CaptionButtonRole::Maximize:
@@ -61,13 +76,11 @@ namespace QWK {
                             ":/qwindowkit/widgets/windows/caption/maximize.svg"));
                         m_checkedIcon = QIcon(QStringLiteral(
                             ":/qwindowkit/widgets/windows/caption/restore.svg"));
-                        setToolTip(tr("Maximize"));
                         setAccessibleName(tr("Maximize"));
                         break;
                     case CaptionButtonRole::Close:
                         m_icon = QIcon(QStringLiteral(
                             ":/qwindowkit/widgets/windows/caption/close.svg"));
-                        setToolTip(tr("Close"));
                         setAccessibleName(tr("Close"));
                         break;
                 }
@@ -78,8 +91,7 @@ namespace QWK {
                     return;
                 }
                 m_maximized = maximized;
-                setToolTip(maximized ? tr("Restore Down") : tr("Maximize"));
-                setAccessibleName(toolTip());
+                setAccessibleName(maximized ? tr("Restore Down") : tr("Maximize"));
                 update();
             }
 
@@ -234,19 +246,23 @@ namespace QWK {
         q->setSystemButton(WindowAgentBase::Maximize, bar->maximizeButton());
         q->setSystemButton(WindowAgentBase::Close, bar->closeButton());
 
-        QObject::connect(bar->minimizeButton(), &QPushButton::clicked,
-                         hostWidget, &QWidget::showMinimized);
+        QObject::connect(bar->minimizeButton(), &QPushButton::clicked, hostWidget,
+                         [host = QPointer<QWidget>(hostWidget)]() {
+                             postSystemCommand(host, SC_MINIMIZE);
+                         });
         QObject::connect(
             bar->maximizeButton(), &QPushButton::clicked, hostWidget,
             [host = QPointer<QWidget>(hostWidget), button = bar->maximizeButton()]() {
                 if (!host) {
                     return;
                 }
-                host->isMaximized() ? host->showNormal() : host->showMaximized();
+                postSystemCommand(host, host->isMaximized() ? SC_RESTORE : SC_MAXIMIZE);
                 QCoreApplication::postEvent(button, new QEvent(QEvent::Leave));
             });
-        QObject::connect(bar->closeButton(), &QPushButton::clicked,
-                         hostWidget, &QWidget::close);
+        QObject::connect(bar->closeButton(), &QPushButton::clicked, hostWidget,
+                         [host = QPointer<QWidget>(hostWidget)]() {
+                             postSystemCommand(host, SC_CLOSE);
+                         });
 
         bar->show();
         bar->updateFromHost();
