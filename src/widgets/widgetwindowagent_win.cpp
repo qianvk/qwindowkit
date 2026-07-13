@@ -9,6 +9,7 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QEvent>
 #include <QtCore/QPointer>
+#include <QtCore/QTimer>
 #include <QtGui/QIcon>
 #include <QtGui/QPainter>
 #include <QtWidgets/QHBoxLayout>
@@ -195,10 +196,19 @@ namespace QWK {
                 m_maximizeButton->setEnabled(flags.testFlag(Qt::WindowMaximizeButtonHint) &&
                                               m_host->minimumSize() != m_host->maximumSize());
                 m_closeButton->setEnabled(flags.testFlag(Qt::WindowCloseButtonHint));
-                raise();
+                ensureRaised();
             }
 
         protected:
+            bool event(QEvent *event) override {
+                if (!m_raising &&
+                    (event->type() == QEvent::ZOrderChange ||
+                     event->type() == QEvent::ShowToParent)) {
+                    ensureRaised();
+                }
+                return QWidget::event(event);
+            }
+
             bool eventFilter(QObject *watched, QEvent *event) override {
                 if (watched != m_host) {
                     return false;
@@ -207,6 +217,9 @@ namespace QWK {
                 switch (event->type()) {
                     case QEvent::Show:
                     case QEvent::Resize:
+                    case QEvent::LayoutRequest:
+                    case QEvent::UpdateRequest:
+                    case QEvent::ChildAdded:
                     case QEvent::WindowStateChange:
                     case QEvent::WindowActivate:
                     case QEvent::WindowDeactivate:
@@ -221,10 +234,39 @@ namespace QWK {
             }
 
         private:
+            void ensureRaised() {
+                if (!m_host) {
+                    return;
+                }
+                m_raising = true;
+                raise();
+                m_raising = false;
+                update();
+                if (m_raiseQueued) {
+                    return;
+                }
+                m_raiseQueued = true;
+                QTimer::singleShot(0, this, [this]() {
+                    m_raiseQueued = false;
+                    if (!m_host) {
+                        return;
+                    }
+                    // The application title bar can be raised during the same
+                    // resize/layout pass. Run once after that pass so hover
+                    // painting is never hidden behind custom chrome widgets.
+                    m_raising = true;
+                    raise();
+                    m_raising = false;
+                    update();
+                });
+            }
+
             QPointer<QWidget> m_host;
             WindowsCaptionButton *m_minimizeButton = nullptr;
             WindowsCaptionButton *m_maximizeButton = nullptr;
             WindowsCaptionButton *m_closeButton = nullptr;
+            bool m_raiseQueued = false;
+            bool m_raising = false;
         };
 
     }
