@@ -12,6 +12,7 @@
 #include <QtCore/QTimer>
 #include <QtGui/QIcon>
 #include <QtGui/QPainter>
+#include <QtGui/QPainterPath>
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QPushButton>
 
@@ -99,6 +100,18 @@ namespace QWK {
                 Q_UNUSED(event)
 
                 QPainter painter(this);
+                const qreal cornerRadius =
+                    property("_qwk_top_right_corner_radius").toReal();
+                if (m_role == CaptionButtonRole::Close && cornerRadius > 0.0) {
+                    QPainterPath clipPath;
+                    clipPath.moveTo(0.0, 0.0);
+                    clipPath.lineTo(width() - cornerRadius, 0.0);
+                    clipPath.quadTo(width(), 0.0, width(), cornerRadius);
+                    clipPath.lineTo(width(), height());
+                    clipPath.lineTo(0.0, height());
+                    clipPath.closeSubpath();
+                    painter.setClipPath(clipPath);
+                }
                 const bool hovered = underMouse();
                 const bool pressed = isDown();
                 const bool closeButton = m_role == CaptionButtonRole::Close;
