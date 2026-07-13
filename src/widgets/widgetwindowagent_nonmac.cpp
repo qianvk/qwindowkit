@@ -57,7 +57,7 @@ namespace QWK {
             for (int i = WindowAgentBase::WindowIcon; i <= WindowAgentBase::Close; ++i) {
                 auto *button = qobject_cast<QWidget *>(
                     context->systemButton(static_cast<WindowAgentBase::SystemButton>(i)));
-                if (!button || button->window() != hostWidget) {
+                if (!button || button->window() != hostWidget || !button->isEnabled()) {
                     continue;
                 }
 
@@ -72,7 +72,7 @@ namespace QWK {
             auto *button = qobject_cast<QWidget *>(
                 context->systemButton(static_cast<WindowAgentBase::SystemButton>(i)));
             if (button) {
-                button->setVisible(showButtons);
+                button->setVisible(showButtons && button->isEnabled());
             }
         }
     }

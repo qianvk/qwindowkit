@@ -33,8 +33,6 @@ namespace QWK {
 
         constexpr int kCaptionButtonWidth = 46;
         constexpr int kCaptionButtonHeight = 32;
-        constexpr int kCaptionButtonCount = 3;
-
         enum class CaptionButtonRole {
             Minimize,
             Maximize,
@@ -158,8 +156,7 @@ namespace QWK {
                 : QWidget(host), m_host(host) {
                 setObjectName(QStringLiteral("qwkWindowsCaptionButtonBar"));
                 setAttribute(Qt::WA_StyledBackground, false);
-                setFixedSize(kCaptionButtonWidth * kCaptionButtonCount,
-                             kCaptionButtonHeight);
+                setFixedHeight(kCaptionButtonHeight);
 
                 auto *layout = new QHBoxLayout(this);
                 layout->setContentsMargins(0, 0, 0, 0);
@@ -188,14 +185,29 @@ namespace QWK {
                     return;
                 }
 
+                const Qt::WindowFlags flags = m_host->windowFlags();
+                const bool canMinimize = flags.testFlag(Qt::WindowMinimizeButtonHint);
+                const bool canMaximize = flags.testFlag(Qt::WindowMaximizeButtonHint) &&
+                                         m_host->minimumSize() != m_host->maximumSize();
+                const bool canClose = flags.testFlag(Qt::WindowCloseButtonHint);
+                m_minimizeButton->setEnabled(canMinimize);
+                m_maximizeButton->setEnabled(canMaximize);
+                m_closeButton->setEnabled(canClose);
+                if (!canMinimize) {
+                    m_minimizeButton->hide();
+                }
+                if (!canMaximize) {
+                    m_maximizeButton->hide();
+                }
+                if (!canClose) {
+                    m_closeButton->hide();
+                }
+
+                const int visibleButtonCount = (canMinimize ? 1 : 0) + (canMaximize ? 1 : 0) +
+                                               (canClose ? 1 : 0);
+                setFixedWidth(kCaptionButtonWidth * visibleButtonCount);
                 move(std::max(0, m_host->width() - width()), 0);
                 m_maximizeButton->setMaximized(m_host->isMaximized());
-
-                const Qt::WindowFlags flags = m_host->windowFlags();
-                m_minimizeButton->setEnabled(flags.testFlag(Qt::WindowMinimizeButtonHint));
-                m_maximizeButton->setEnabled(flags.testFlag(Qt::WindowMaximizeButtonHint) &&
-                                              m_host->minimumSize() != m_host->maximumSize());
-                m_closeButton->setEnabled(flags.testFlag(Qt::WindowCloseButtonHint));
                 ensureRaised();
             }
 
