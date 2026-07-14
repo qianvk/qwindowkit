@@ -245,7 +245,6 @@ namespace QWK {
                     case QEvent::Show:
                     case QEvent::Resize:
                     case QEvent::LayoutRequest:
-                    case QEvent::UpdateRequest:
                     case QEvent::ChildAdded:
                     case QEvent::WindowStateChange:
                     case QEvent::WindowActivate:
@@ -253,6 +252,11 @@ namespace QWK {
                     case QEvent::PaletteChange:
                         updateFromHost();
                         update();
+                        break;
+                    case QEvent::UpdateRequest:
+                        // A child update is coalesced into the host's UpdateRequest. Updating the
+                        // caption bar here would post another host request and create an endless
+                        // repaint loop while the window is otherwise idle.
                         break;
                     default:
                         break;
