@@ -22,7 +22,11 @@ namespace QWK {
         }
 
         WId winId() const override {
-            return widget->effectiveWinId();
+            // effectiveWinId() falls back to the nearest native ancestor. A top-level dialog
+            // created with a native parent can therefore report the owner's HWND before its own
+            // platform window exists, causing two agents to manage the same native window. Wait
+            // for the dialog's WinIdChange instead of ever borrowing another window's handle.
+            return widget->internalWinId();
         }
 
     protected:
