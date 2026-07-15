@@ -396,7 +396,18 @@ namespace QWK {
                          });
         QObject::connect(
             bar->closeButton(), &QPushButton::clicked, hostWidget,
-            [host = QPointer<QWidget>(hostWidget)]() { postSystemCommand(host, SC_CLOSE); });
+            [host = QPointer<QWidget>(hostWidget)]() {
+                if (host) {
+                    // The click is emitted while QWindowKit translates WM_NCLBUTTONUP. Defer the
+                    // Qt close until that native dispatch has unwound so QDialog modality and
+                    // WA_DeleteOnClose teardown cannot re-enter the hooked window procedure.
+                    QTimer::singleShot(0, host, [host]() {
+                        if (host) {
+                            host->close();
+                        }
+                    });
+                }
+            });
 
         bar->show();
         bar->updateFromHost();
