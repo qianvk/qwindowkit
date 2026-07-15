@@ -521,10 +521,11 @@ namespace QWK {
                     // https://github.com/qt/qtbase/blob/e26a87f1ecc40bc8c6aa5b889fce67410a57a702/src/plugins/platforms/windows/qwindowscontext.cpp#L1546
                     // Qt needs to refer to the WM_NCCALCSIZE message data that hasn't been
                     // processed, so we have to process it after Qt acquires the initial data.
-                    if (lastMessageContext) {
+                    Win32WindowContext *context = g_wndProcHash->value(msg->hwnd);
+                    if (context && context->window()) {
                         LRESULT res;
-                        if (lastMessageContext->nonClientCalcSizeHandler(
-                                msg->hwnd, msg->message, msg->wParam, msg->lParam, &res)) {
+                        if (context->nonClientCalcSizeHandler(msg->hwnd, msg->message, msg->wParam,
+                                                              msg->lParam, &res)) {
                             *result = decltype(*result)(res);
                             return true;
                         }
@@ -551,8 +552,6 @@ namespace QWK {
         }
 
         static inline WindowsNativeEventFilter *instance = nullptr;
-        static inline Win32WindowContext *lastMessageContext = nullptr;
-
         static inline void install() {
             if (instance) {
                 return;
@@ -633,11 +632,6 @@ namespace QWK {
             return ::CallWindowProcW(g_qtWindowProc, hWnd, message, wParam, lParam);
         }
 
-        WindowsNativeEventFilter::lastMessageContext = ctx;
-        const auto &contextCleaner = qScopeGuard([]() {
-            WindowsNativeEventFilter::lastMessageContext = nullptr; //
-        });
-
         // Since Qt does the necessary processing of the WM_NCCALCSIZE message, we need to
         // forward it right away and process it in our native event filter.
         if (message == WM_NCCALCSIZE) {
@@ -664,6 +658,12 @@ namespace QWK {
         Q_ASSERT(hWnd);
         Q_ASSERT(ctx);
 
+        // A transient may briefly report its owner's HWND while Qt is creating its platform
+        // window. Never let one context replace another context's native hook registration.
+        if (g_wndProcHash->contains(hWnd)) {
+            return;
+        }
+
         if (isSystemBorderEnabled()) {
             // Inform Qt we want and have set custom margins
             setInternalWindowFrameMargins(window, QMargins(0, -int(getTitleBarHeight(hWnd)), 0, 0));
@@ -689,12 +689,16 @@ namespace QWK {
         triggerFrameChange(hWnd);
     }
 
-    static inline void removeManagedWindow(HWND hWnd) {
+    static inline void removeManagedWindow(HWND hWnd, Win32WindowContext *ctx) {
         Q_ASSERT(hWnd);
+        Q_ASSERT(ctx);
 
-        // Remove window handle mapping
-        if (!g_wndProcHash->remove(hWnd))
+        // HWND values can be reused. Only the context that installed this mapping may remove it.
+        auto it = g_wndProcHash->find(hWnd);
+        if (it == g_wndProcHash->end() || it.value() != ctx) {
             return;
+        }
+        g_wndProcHash->erase(it);
 
         // Remove event filter if the all windows has been destroyed
         if (g_wndProcHash->empty()) {
@@ -706,7 +710,7 @@ namespace QWK {
 
     Win32WindowContext::~Win32WindowContext() {
         if (m_windowId) {
-            removeManagedWindow(reinterpret_cast<HWND>(m_windowId));
+            removeManagedWindow(reinterpret_cast<HWND>(m_windowId), this);
         }
     }
 
@@ -889,7 +893,7 @@ namespace QWK {
 
         // If the original window id is valid, remove all resources related
         if (oldWinId) {
-            removeManagedWindow(reinterpret_cast<HWND>(oldWinId));
+            removeManagedWindow(reinterpret_cast<HWND>(oldWinId), this);
         }
         if (!winId) {
             return;

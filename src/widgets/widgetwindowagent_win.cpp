@@ -56,7 +56,8 @@ namespace QWK {
             if (!widget) {
                 return nullptr;
             }
-            return reinterpret_cast<HWND>(widget->window()->winId());
+            QWidget *window = widget->window();
+            return window ? reinterpret_cast<HWND>(window->internalWinId()) : nullptr;
         }
 
         qreal effectiveTopRightCornerRadius(QWidget *host) {
@@ -396,18 +397,7 @@ namespace QWK {
                          });
         QObject::connect(
             bar->closeButton(), &QPushButton::clicked, hostWidget,
-            [host = QPointer<QWidget>(hostWidget)]() {
-                if (host) {
-                    // The click is emitted while QWindowKit translates WM_NCLBUTTONUP. Defer the
-                    // Qt close until that native dispatch has unwound so QDialog modality and
-                    // WA_DeleteOnClose teardown cannot re-enter the hooked window procedure.
-                    QTimer::singleShot(0, host, [host]() {
-                        if (host) {
-                            host->close();
-                        }
-                    });
-                }
-            });
+            [host = QPointer<QWidget>(hostWidget)]() { postSystemCommand(host, SC_CLOSE); });
 
         bar->show();
         bar->updateFromHost();
