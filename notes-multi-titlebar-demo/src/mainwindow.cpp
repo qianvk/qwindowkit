@@ -393,6 +393,7 @@ QWidget *MainWindow::createButtonLabPage()
 void MainWindow::installWindowAgent()
 {
     m_windowAgent = new QWK::WidgetWindowAgent(this);
+    m_windowAgent->setResizable(true);
     m_windowAgent->setup(this);
     m_windowAgent->installSystemButtons();
 }

@@ -65,6 +65,8 @@ namespace QWK {
                                       LRESULT *result);
 
     protected:
+        void applyNativeResizableStyle(HWND hWnd);
+
         // The last hit test result, helpful to handle WM_MOUSEMOVE and WM_NCMOUSELEAVE.
         WindowPart lastHitTestResult = WindowPart::Outside;
         int lastHitTestResultRaw = HTNOWHERE;
@@ -79,6 +81,8 @@ namespace QWK {
 
         // Attributes
         bool noSystemMenu = false;
+        LONG_PTR nativeResizableStyleBits = 0;
+        bool nativeResizableStyleCaptured = false;
     };
 
 }

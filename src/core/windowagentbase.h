@@ -17,6 +17,7 @@ namespace QWK {
 
     class QWK_CORE_EXPORT WindowAgentBase : public QObject {
         Q_OBJECT
+        Q_PROPERTY(bool resizable READ isResizable WRITE setResizable NOTIFY resizableChanged)
         Q_PROPERTY(SystemButtonVisibility systemButtonVisibility READ systemButtonVisibility WRITE
                        setSystemButtonVisibility NOTIFY systemButtonVisibilityChanged)
         Q_DECLARE_PRIVATE(WindowAgentBase)
@@ -43,10 +44,14 @@ namespace QWK {
         SystemButtonVisibility systemButtonVisibility() const;
         void setSystemButtonVisibility(SystemButtonVisibility visibility);
 
+        bool isResizable() const;
+        void setResizable(bool resizable);
+
         QVariant windowAttribute(const QString &key) const;
         Q_INVOKABLE bool setWindowAttribute(const QString &key, const QVariant &attribute);
 
     Q_SIGNALS:
+        void resizableChanged(bool resizable);
         void systemButtonVisibilityChanged(SystemButtonVisibility visibility);
 
     public Q_SLOTS:

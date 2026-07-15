@@ -74,6 +74,9 @@ namespace QWK {
 
     void WindowAgentBasePrivate::setup(QObject *host, WindowItemDelegate *delegate) {
         auto ctx = createContext();
+        // Apply the policy before the native window is observed so the first platform style is
+        // already correct and no show-time resize-frame flicker is introduced.
+        ctx->setResizable(resizable);
         ctx->setup(host, delegate);
         context.reset(ctx);
     }
@@ -82,6 +85,36 @@ namespace QWK {
         Destructor.
     */
     WindowAgentBase::~WindowAgentBase() = default;
+
+    /*!
+        Returns whether the host window accepts native resize operations.
+
+        This policy is independent from the host's current minimum and maximum size constraints.
+        A host is treated as fixed when either source disables resizing. The default is c false;
+        resizable application windows must opt in before setup().
+    */
+    bool WindowAgentBase::isResizable() const {
+        Q_D(const WindowAgentBase);
+        return d->resizable;
+    }
+
+    /*!
+        Enables or disables native resize hit testing for the host window.
+
+        The setting may be applied before or after setup(). Platform contexts synchronize their
+        native window style when the policy changes.
+    */
+    void WindowAgentBase::setResizable(bool resizable) {
+        Q_D(WindowAgentBase);
+        if (d->resizable == resizable) {
+            return;
+        }
+        d->resizable = resizable;
+        if (d->context) {
+            d->context->setResizable(resizable);
+        }
+        Q_EMIT resizableChanged(resizable);
+    }
 
     /*!
         Returns the visibility policy for native or registered system buttons.

@@ -36,6 +36,7 @@ namespace QWK {
 
     protected:
         std::unique_ptr<SharedEventFilter> cocoaWindowEventFilter;
+        bool systemButtonsRequested = false;
     };
 
 }

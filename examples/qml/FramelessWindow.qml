@@ -54,6 +54,7 @@ Window {
 
     WindowAgent {
         id: windowAgent
+        resizable: true
     }
 
     TapHandler {

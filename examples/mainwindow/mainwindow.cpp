@@ -137,6 +137,7 @@ bool MainWindow::event(QEvent *event) {
 void MainWindow::installWindowAgent() {
     // 1. Setup window agent
     windowAgent = new QWK::WidgetWindowAgent(this);
+    windowAgent->setResizable(true);
     windowAgent->setup(this);
 
     // 2. Construct your title bar

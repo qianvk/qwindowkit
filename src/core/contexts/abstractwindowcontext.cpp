@@ -114,10 +114,37 @@ namespace QWK {
         return true;
     }
 
+    bool AbstractWindowContext::setResizable(bool resizable) {
+        if (m_resizable == resizable) {
+            return false;
+        }
+        m_resizable = resizable;
+        if (m_windowId) {
+            virtual_hook(ResizableChangedHook, nullptr);
+        }
+        return true;
+    }
+
 #ifdef Q_OS_MAC
     void AbstractWindowContext::setSystemButtonAreaCallback(const ScreenRectCallback &callback) {
         m_systemButtonAreaCallback = callback;
         virtual_hook(SystemButtonAreaChangedHook, nullptr);
+    }
+
+    bool AbstractWindowContext::setSystemButtonPosition(WindowAgentBase::SystemButton button,
+                                                        const QPoint &position, bool enabled) {
+        if (button != WindowAgentBase::Close && button != WindowAgentBase::Minimize &&
+            button != WindowAgentBase::Maximize) {
+            return false;
+        }
+        if (m_hasSystemButtonPositions[button] == enabled &&
+            (!enabled || m_systemButtonPositions[button] == position)) {
+            return false;
+        }
+        m_hasSystemButtonPositions[button] = enabled;
+        m_systemButtonPositions[button] = enabled ? position : QPoint();
+        virtual_hook(SystemButtonPositionChangedHook, nullptr);
+        return true;
     }
 #endif
 

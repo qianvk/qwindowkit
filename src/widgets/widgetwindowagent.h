@@ -48,6 +48,12 @@ namespace QWK {
 
         ScreenRectCallback systemButtonAreaCallback() const;
         void setSystemButtonAreaCallback(const ScreenRectCallback &callback);
+
+        // Positions one AppKit traffic-light button by its top-left point in host coordinates.
+        bool hasSystemButtonPosition(SystemButton button) const;
+        QPoint systemButtonPosition(SystemButton button) const;
+        void setSystemButtonPosition(SystemButton button, const QPoint &position);
+        void clearSystemButtonPosition(SystemButton button);
 #endif
 
         bool isHitTestVisible(QWidget *titleBar, const QWidget *w) const;

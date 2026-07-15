@@ -78,10 +78,9 @@ namespace QWK {
         d->hostWidget = w;
 #ifndef Q_OS_MAC
         d->setupSystemButtonVisibility();
-        connect(this, &WindowAgentBase::systemButtonVisibilityChanged, this,
-                [d](WindowAgentBase::SystemButtonVisibility) {
-                    d->updateSystemButtonVisibility();
-                });
+        connect(
+            this, &WindowAgentBase::systemButtonVisibilityChanged, this,
+            [d](WindowAgentBase::SystemButtonVisibility) { d->updateSystemButtonVisibility(); });
 #endif
 
 #if defined(Q_OS_WINDOWS) && QWINDOWKIT_CONFIG(ENABLE_WINDOWS_SYSTEM_BORDERS)
@@ -90,13 +89,12 @@ namespace QWK {
         return true;
     }
 
-    QList<QWidget*> WidgetWindowAgent::titleBars() const
-    {
+    QList<QWidget *> WidgetWindowAgent::titleBars() const {
         Q_D(const WidgetWindowAgent);
-        QList<QWidget*> ret;
+        QList<QWidget *> ret;
         const auto bars = d->context->titleBars();
-        for (auto* bar : bars) {
-            ret.append(qobject_cast<QWidget*>(bar));
+        for (auto *bar : bars) {
+            ret.append(qobject_cast<QWidget *>(bar));
         }
 
         return ret;
@@ -118,8 +116,7 @@ namespace QWK {
         Q_EMIT titleBarChanged(titleBar);
     }
 
-    bool WidgetWindowAgent::addTitleBar(QWidget *titleBar)
-    {
+    bool WidgetWindowAgent::addTitleBar(QWidget *titleBar) {
         Q_D(WidgetWindowAgent);
         if (!d->context->addTitleBar(titleBar)) {
             return false;
@@ -129,8 +126,7 @@ namespace QWK {
         return true;
     }
 
-    bool WidgetWindowAgent::removeTitleBar(QWidget *titleBar)
-    {
+    bool WidgetWindowAgent::removeTitleBar(QWidget *titleBar) {
         Q_D(WidgetWindowAgent);
         if (!d->context->removeTitleBar(titleBar)) {
             return false;
@@ -166,9 +162,10 @@ namespace QWK {
     /*!
         Installs the platform system buttons managed by QWindowKit.
 
-        On Windows, QWindowKit creates and binds the minimize, maximize, and close buttons. On
-        macOS, AppKit already owns the native traffic-light buttons, so this confirms that native
-        support is available. Other platforms may return \c false.
+        On Windows, QWindowKit creates and binds native-style caption buttons. On macOS,
+        QWindowKit upgrades a frameless NSWindow to a transparent full-content titled window and
+        installs the AppKit traffic-light buttons requested by the host's window flags. Other
+        platforms may return \c false.
     */
     bool WidgetWindowAgent::installSystemButtons() {
         Q_D(WidgetWindowAgent);
@@ -186,8 +183,7 @@ namespace QWK {
     /*!
         Returns \a true if the widget can receive mouse events on title bar.
     */
-    bool WidgetWindowAgent::isHitTestVisible(QWidget *titleBar, const QWidget *w) const
-    {
+    bool WidgetWindowAgent::isHitTestVisible(QWidget *titleBar, const QWidget *w) const {
         Q_D(const WidgetWindowAgent);
         return d->context->isHitTestVisible(titleBar, w);
     }
@@ -197,8 +193,7 @@ namespace QWK {
         The widget may be a sibling of \a titleBar, such as QSplitterHandle, but both widgets
         must belong to the agent's top-level window.
     */
-    bool WidgetWindowAgent::setHitTestVisible(QWidget *titleBar, QWidget *w, bool visible)
-    {
+    bool WidgetWindowAgent::setHitTestVisible(QWidget *titleBar, QWidget *w, bool visible) {
         Q_D(WidgetWindowAgent);
         return d->context->setHitTestVisible(titleBar, w, visible);
     }
@@ -236,8 +231,7 @@ namespace QWK {
 }
 
 
-void QWK::WidgetWindowAgent::clearTitleBars()
-{
+void QWK::WidgetWindowAgent::clearTitleBars() {
     Q_D(WidgetWindowAgent);
     d->context->clearTitleBars();
 

@@ -69,19 +69,22 @@ namespace QWK {
                     case CaptionButtonRole::Minimize:
                         m_icon = QIcon(QStringLiteral(
                             ":/qwindowkit/widgets/windows/caption/minimize.svg"));
-                        setAccessibleName(tr("Minimize"));
+                        setAccessibleName(QCoreApplication::translate(
+                            "QWK::WindowsCaptionButton", "Minimize"));
                         break;
                     case CaptionButtonRole::Maximize:
                         m_icon = QIcon(QStringLiteral(
                             ":/qwindowkit/widgets/windows/caption/maximize.svg"));
                         m_checkedIcon = QIcon(QStringLiteral(
                             ":/qwindowkit/widgets/windows/caption/restore.svg"));
-                        setAccessibleName(tr("Maximize"));
+                        setAccessibleName(QCoreApplication::translate(
+                            "QWK::WindowsCaptionButton", "Maximize"));
                         break;
                     case CaptionButtonRole::Close:
                         m_icon = QIcon(QStringLiteral(
                             ":/qwindowkit/widgets/windows/caption/close.svg"));
-                        setAccessibleName(tr("Close"));
+                        setAccessibleName(
+                            QCoreApplication::translate("QWK::WindowsCaptionButton", "Close"));
                         break;
                 }
             }
@@ -91,7 +94,10 @@ namespace QWK {
                     return;
                 }
                 m_maximized = maximized;
-                setAccessibleName(maximized ? tr("Restore Down") : tr("Maximize"));
+                setAccessibleName(
+                    maximized
+                        ? QCoreApplication::translate("QWK::WindowsCaptionButton", "Restore Down")
+                        : QCoreApplication::translate("QWK::WindowsCaptionButton", "Maximize"));
                 update();
             }
 

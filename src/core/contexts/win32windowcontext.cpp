@@ -716,6 +716,14 @@ namespace QWK {
 
     void Win32WindowContext::virtual_hook(int id, void *data) {
         switch (id) {
+            case ResizableChangedHook: {
+                if (!m_windowId) {
+                    return;
+                }
+                applyNativeResizableStyle(reinterpret_cast<HWND>(m_windowId));
+                return;
+            }
+
             case RaiseWindowHook: {
                 if (!m_windowId)
                     return;
@@ -876,6 +884,8 @@ namespace QWK {
         mouseLeaveBlocked = false;
         lastHitTestResult = WindowPart::Outside;
         lastHitTestResultRaw = HTNOWHERE;
+        nativeResizableStyleBits = 0;
+        nativeResizableStyleCaptured = false;
 
         // If the original window id is valid, remove all resources related
         if (oldWinId) {
@@ -908,8 +918,37 @@ namespace QWK {
             }
         }
 
+        // Capture the resizable form after QWindowKit has established its base native frame.
+        // This preserves WS_THICKFRAME even for a Qt frameless host that did not originally have
+        // it, while still restoring the host's original maximize capability.
+        const auto resizableStyle = ::GetWindowLongPtrW(hWnd, GWL_STYLE);
+        nativeResizableStyleBits = resizableStyle & (WS_THICKFRAME | WS_MAXIMIZEBOX);
+        nativeResizableStyleCaptured = true;
+        applyNativeResizableStyle(hWnd);
+
         // Add managed window
         addManagedWindow(m_windowHandle, hWnd, this);
+    }
+
+    void Win32WindowContext::applyNativeResizableStyle(HWND hWnd) {
+        Q_ASSERT(hWnd);
+        if (!nativeResizableStyleCaptured) {
+            const auto style = ::GetWindowLongPtrW(hWnd, GWL_STYLE);
+            nativeResizableStyleBits = style & (WS_THICKFRAME | WS_MAXIMIZEBOX);
+            nativeResizableStyleCaptured = true;
+        }
+
+        constexpr LONG_PTR resizeStyleMask = WS_THICKFRAME | WS_MAXIMIZEBOX;
+        const LONG_PTR currentStyle = ::GetWindowLongPtrW(hWnd, GWL_STYLE);
+        const LONG_PTR nextStyle =
+            m_resizable ? (currentStyle | nativeResizableStyleBits)
+                        : (currentStyle & ~resizeStyleMask);
+        if (nextStyle == currentStyle) {
+            return;
+        }
+
+        ::SetWindowLongPtrW(hWnd, GWL_STYLE, nextStyle);
+        triggerFrameChange(hWnd);
     }
 
     bool Win32WindowContext::windowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam,

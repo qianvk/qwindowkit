@@ -73,6 +73,11 @@ namespace QWK {
 #ifdef Q_OS_MAC
         inline ScreenRectCallback systemButtonAreaCallback() const;
         void setSystemButtonAreaCallback(const ScreenRectCallback &callback);
+
+        inline bool hasSystemButtonPosition(WindowAgentBase::SystemButton button) const;
+        inline QPoint systemButtonPosition(WindowAgentBase::SystemButton button) const;
+        bool setSystemButtonPosition(WindowAgentBase::SystemButton button, const QPoint &position,
+                                     bool enabled);
 #endif
 
         bool isInSystemButtons(const QPoint &pos, WindowAgentBase::SystemButton *button) const;
@@ -81,6 +86,8 @@ namespace QWK {
         inline bool isHostWidthFixed() const;
         inline bool isHostHeightFixed() const;
         inline bool isHostSizeFixed() const;
+        inline bool isResizable() const;
+        bool setResizable(bool resizable);
 
         virtual QString key() const;
 
@@ -93,6 +100,9 @@ namespace QWK {
             DrawWindows10BorderHook_Native,   // Only works on Windows 10, native workaround
             SystemButtonAreaChangedHook,      // Only works on Mac
             SystemButtonVisibilityChangedHook,
+            InstallSystemButtonsHook,
+            SystemButtonPositionChangedHook, // Only works on Mac
+            ResizableChangedHook,
         };
         virtual void virtual_hook(int id, void *data);
 
@@ -126,10 +136,13 @@ namespace QWK {
         QVector<TitleBarRecord> m_titleBars;
 #ifdef Q_OS_MAC
         ScreenRectCallback m_systemButtonAreaCallback;
+        std::array<QPoint, WindowAgentBase::Close + 1> m_systemButtonPositions{};
+        std::array<bool, WindowAgentBase::Close + 1> m_hasSystemButtonPositions{};
 #endif
         std::array<QPointer<QObject>, WindowAgentBase::Close + 1> m_systemButtons{};
         WindowAgentBase::SystemButtonVisibility m_systemButtonVisibility =
             WindowAgentBase::AlwaysVisible;
+        bool m_resizable = false;
 
         std::list<std::pair<QString, QVariant>> m_windowAttributesOrder;
         QHash<QString, decltype(m_windowAttributesOrder)::iterator> m_windowAttributes;
@@ -170,26 +183,42 @@ namespace QWK {
     inline ScreenRectCallback AbstractWindowContext::systemButtonAreaCallback() const {
         return m_systemButtonAreaCallback;
     }
+
+    inline bool AbstractWindowContext::hasSystemButtonPosition(
+        WindowAgentBase::SystemButton button) const {
+        return button > WindowAgentBase::Unknown && button <= WindowAgentBase::Close &&
+               m_hasSystemButtonPositions[button];
+    }
+
+    inline QPoint AbstractWindowContext::systemButtonPosition(
+        WindowAgentBase::SystemButton button) const {
+        return hasSystemButtonPosition(button) ? m_systemButtonPositions[button] : QPoint();
+    }
 #endif
 
     inline bool AbstractWindowContext::isHostWidthFixed() const {
-        return m_windowHandle
-                   ? ((m_windowHandle->flags() & Qt::MSWindowsFixedSizeDialogHint) ||
-                      m_windowHandle->minimumWidth() == m_windowHandle->maximumWidth())
-                   : false;
+        return !m_resizable ||
+               (m_windowHandle ? ((m_windowHandle->flags() & Qt::MSWindowsFixedSizeDialogHint) ||
+                                 m_windowHandle->minimumWidth() == m_windowHandle->maximumWidth())
+                               : false);
     }
 
     inline bool AbstractWindowContext::isHostHeightFixed() const {
-        return m_windowHandle
-                   ? ((m_windowHandle->flags() & Qt::MSWindowsFixedSizeDialogHint) ||
-                      m_windowHandle->minimumHeight() == m_windowHandle->maximumHeight())
-                   : false;
+        return !m_resizable ||
+               (m_windowHandle ? ((m_windowHandle->flags() & Qt::MSWindowsFixedSizeDialogHint) ||
+                                 m_windowHandle->minimumHeight() == m_windowHandle->maximumHeight())
+                               : false);
     }
 
     inline bool AbstractWindowContext::isHostSizeFixed() const {
-        return m_windowHandle ? ((m_windowHandle->flags() & Qt::MSWindowsFixedSizeDialogHint) ||
+        return !m_resizable ||
+               (m_windowHandle ? ((m_windowHandle->flags() & Qt::MSWindowsFixedSizeDialogHint) ||
                                  m_windowHandle->minimumSize() == m_windowHandle->maximumSize())
-                              : false;
+                               : false);
+    }
+
+    inline bool AbstractWindowContext::isResizable() const {
+        return m_resizable;
     }
 
 }

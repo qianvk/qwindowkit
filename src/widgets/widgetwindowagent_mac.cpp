@@ -47,7 +47,12 @@ namespace QWK {
     };
 
     bool WidgetWindowAgentPrivate::installPlatformSystemButtons() {
-        return context != nullptr;
+        if (!context) {
+            return false;
+        }
+        bool installed = false;
+        context->virtual_hook(AbstractWindowContext::InstallSystemButtonsHook, &installed);
+        return installed;
     }
 
     QRect WidgetWindowAgentPrivate::platformSystemButtonAreaGeometry() const {
@@ -103,9 +108,7 @@ namespace QWK {
             d->context->setSystemButtonAreaCallback({});
             return;
         }
-        d->context->setSystemButtonAreaCallback([rect](const QSize &) {
-            return rect;
-        });
+        d->context->setSystemButtonAreaCallback([rect](const QSize &) { return rect; });
     }
 
     /*!
@@ -127,6 +130,26 @@ namespace QWK {
         setSystemButtonArea(nullptr);
         d->systemButtonAreaRect = {};
         d->context->setSystemButtonAreaCallback(callback);
+    }
+
+    bool WidgetWindowAgent::hasSystemButtonPosition(SystemButton button) const {
+        Q_D(const WidgetWindowAgent);
+        return d->context->hasSystemButtonPosition(button);
+    }
+
+    QPoint WidgetWindowAgent::systemButtonPosition(SystemButton button) const {
+        Q_D(const WidgetWindowAgent);
+        return d->context->systemButtonPosition(button);
+    }
+
+    void WidgetWindowAgent::setSystemButtonPosition(SystemButton button, const QPoint &position) {
+        Q_D(WidgetWindowAgent);
+        d->context->setSystemButtonPosition(button, position, true);
+    }
+
+    void WidgetWindowAgent::clearSystemButtonPosition(SystemButton button) {
+        Q_D(WidgetWindowAgent);
+        d->context->setSystemButtonPosition(button, {}, false);
     }
 
 }

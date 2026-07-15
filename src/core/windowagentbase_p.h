@@ -34,6 +34,9 @@ namespace QWK {
         void setup(QObject *host, WindowItemDelegate *delegate);
 
         std::unique_ptr<AbstractWindowContext> context;
+        // Native resize is opt-in. Dialogs and other transient windows are fixed by default,
+        // while an application can explicitly enable resizing before setup().
+        bool resizable = false;
 
     public:
         using WindowContextFactoryMethod = AbstractWindowContext *(*) ();
