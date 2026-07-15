@@ -34,6 +34,18 @@ namespace QWK {
 
         constexpr int kCaptionButtonWidth = 46;
         constexpr int kCaptionButtonHeight = 32;
+        constexpr qreal kRoundedWindowCornerRadius = 8.0;
+        constexpr qreal kSmallRoundedWindowCornerRadius = 4.0;
+        constexpr DWORD kDwmWindowCornerPreferenceAttribute = 33;
+        constexpr char kEffectiveCornerRadiusProperty[] = "_qwk_effective_top_right_corner_radius";
+
+        enum class DwmWindowCornerPreference : int {
+            Default = 0,
+            DoNotRound = 1,
+            Round = 2,
+            RoundSmall = 3,
+        };
+
         enum class CaptionButtonRole {
             Minimize,
             Maximize,
@@ -45,6 +57,38 @@ namespace QWK {
                 return nullptr;
             }
             return reinterpret_cast<HWND>(widget->window()->winId());
+        }
+
+        qreal effectiveTopRightCornerRadius(QWidget *host) {
+            if (!host || host->isMaximized() || host->isFullScreen() ||
+                !Private::IsWindows11OrGreater_Real()) {
+                return 0.0;
+            }
+
+            using DwmGetWindowAttributePtr = HRESULT(WINAPI *)(HWND, DWORD, PVOID, DWORD);
+            static const auto getWindowAttribute = []() -> DwmGetWindowAttributePtr {
+                HMODULE module = ::GetModuleHandleW(L"dwmapi.dll");
+                if (!module) {
+                    module = ::LoadLibraryW(L"dwmapi.dll");
+                }
+                return module ? reinterpret_cast<DwmGetWindowAttributePtr>(
+                                    ::GetProcAddress(module, "DwmGetWindowAttribute"))
+                              : nullptr;
+            }();
+
+            DwmWindowCornerPreference preference = DwmWindowCornerPreference::Default;
+            const HWND hwnd = windowHandleForWidget(host);
+            if (getWindowAttribute && hwnd &&
+                SUCCEEDED(getWindowAttribute(hwnd, kDwmWindowCornerPreferenceAttribute, &preference,
+                                             sizeof(preference)))) {
+                if (preference == DwmWindowCornerPreference::DoNotRound) {
+                    return 0.0;
+                }
+                if (preference == DwmWindowCornerPreference::RoundSmall) {
+                    return kSmallRoundedWindowCornerRadius;
+                }
+            }
+            return kRoundedWindowCornerRadius;
         }
 
         void postSystemCommand(QWidget *host, WPARAM command) {
@@ -62,31 +106,41 @@ namespace QWK {
                 setFlat(true);
                 setCursor(Qt::ArrowCursor);
                 setFixedSize(kCaptionButtonWidth, kCaptionButtonHeight);
-                setIconSize(role == CaptionButtonRole::Maximize ? QSize(12, 12)
-                                                                 : QSize(11, 11));
+                setIconSize(role == CaptionButtonRole::Maximize ? QSize(12, 12) : QSize(11, 11));
 
                 switch (role) {
                     case CaptionButtonRole::Minimize:
-                        m_icon = QIcon(QStringLiteral(
-                            ":/qwindowkit/widgets/windows/caption/minimize.svg"));
-                        setAccessibleName(QCoreApplication::translate(
-                            "QWK::WindowsCaptionButton", "Minimize"));
+                        m_icon = QIcon(
+                            QStringLiteral(":/qwindowkit/widgets/windows/caption/minimize.svg"));
+                        setAccessibleName(
+                            QCoreApplication::translate("QWK::WindowsCaptionButton", "Minimize"));
                         break;
                     case CaptionButtonRole::Maximize:
-                        m_icon = QIcon(QStringLiteral(
-                            ":/qwindowkit/widgets/windows/caption/maximize.svg"));
-                        m_checkedIcon = QIcon(QStringLiteral(
-                            ":/qwindowkit/widgets/windows/caption/restore.svg"));
-                        setAccessibleName(QCoreApplication::translate(
-                            "QWK::WindowsCaptionButton", "Maximize"));
+                        m_icon = QIcon(
+                            QStringLiteral(":/qwindowkit/widgets/windows/caption/maximize.svg"));
+                        m_checkedIcon = QIcon(
+                            QStringLiteral(":/qwindowkit/widgets/windows/caption/restore.svg"));
+                        setAccessibleName(
+                            QCoreApplication::translate("QWK::WindowsCaptionButton", "Maximize"));
                         break;
                     case CaptionButtonRole::Close:
-                        m_icon = QIcon(QStringLiteral(
-                            ":/qwindowkit/widgets/windows/caption/close.svg"));
+                        setObjectName(QStringLiteral("qwkWindowsCloseButton"));
+                        m_icon =
+                            QIcon(QStringLiteral(":/qwindowkit/widgets/windows/caption/close.svg"));
                         setAccessibleName(
                             QCoreApplication::translate("QWK::WindowsCaptionButton", "Close"));
                         break;
                 }
+            }
+
+            void setTopRightCornerRadius(qreal radius) {
+                radius = std::clamp(radius, 0.0, static_cast<qreal>(std::min(width(), height())));
+                if (qFuzzyCompare(m_topRightCornerRadius + 1.0, radius + 1.0)) {
+                    return;
+                }
+                m_topRightCornerRadius = radius;
+                setProperty(kEffectiveCornerRadiusProperty, radius);
+                update();
             }
 
             void setMaximized(bool maximized) {
@@ -119,14 +173,15 @@ namespace QWK {
                         background = dark ? QColor(255, 255, 255, pressed ? 36 : 24)
                                           : QColor(0, 0, 0, pressed ? 34 : 20);
                     }
-                    const qreal cornerRadius =
-                        property("_qwk_top_right_corner_radius").toReal();
+                    const qreal cornerRadius = m_topRightCornerRadius;
                     if (closeButton && cornerRadius > 0.0) {
                         painter.setRenderHint(QPainter::Antialiasing, true);
                         QPainterPath hoverPath;
                         hoverPath.moveTo(0.0, 0.0);
                         hoverPath.lineTo(width() - cornerRadius, 0.0);
-                        hoverPath.quadTo(width(), 0.0, width(), cornerRadius);
+                        hoverPath.arcTo(QRectF(width() - cornerRadius * 2.0, 0.0,
+                                               cornerRadius * 2.0, cornerRadius * 2.0),
+                                        90.0, -90.0);
                         hoverPath.lineTo(width(), height());
                         hoverPath.lineTo(0.0, height());
                         hoverPath.closeSubpath();
@@ -145,9 +200,7 @@ namespace QWK {
                     glyphColor.setAlpha(150);
                 }
 
-                const QIcon &icon = m_maximized && !m_checkedIcon.isNull()
-                                        ? m_checkedIcon
-                                        : m_icon;
+                const QIcon &icon = m_maximized && !m_checkedIcon.isNull() ? m_checkedIcon : m_icon;
                 QPixmap glyph = icon.pixmap(iconSize());
                 if (!glyph.isNull()) {
                     QPainter glyphPainter(&glyph);
@@ -169,12 +222,12 @@ namespace QWK {
             QIcon m_icon;
             QIcon m_checkedIcon;
             bool m_maximized = false;
+            qreal m_topRightCornerRadius = 0.0;
         };
 
         class WindowsCaptionButtonBar final : public QWidget {
         public:
-            explicit WindowsCaptionButtonBar(QWidget *host)
-                : QWidget(host), m_host(host) {
+            explicit WindowsCaptionButtonBar(QWidget *host) : QWidget(host), m_host(host) {
                 setObjectName(QStringLiteral("qwkWindowsCaptionButtonBar"));
                 setAttribute(Qt::WA_StyledBackground, false);
                 setFixedHeight(kCaptionButtonHeight);
@@ -183,10 +236,8 @@ namespace QWK {
                 layout->setContentsMargins(0, 0, 0, 0);
                 layout->setSpacing(0);
 
-                m_minimizeButton = new WindowsCaptionButton(
-                    CaptionButtonRole::Minimize, this);
-                m_maximizeButton = new WindowsCaptionButton(
-                    CaptionButtonRole::Maximize, this);
+                m_minimizeButton = new WindowsCaptionButton(CaptionButtonRole::Minimize, this);
+                m_maximizeButton = new WindowsCaptionButton(CaptionButtonRole::Maximize, this);
                 m_closeButton = new WindowsCaptionButton(CaptionButtonRole::Close, this);
 
                 layout->addWidget(m_minimizeButton);
@@ -197,9 +248,15 @@ namespace QWK {
                 updateFromHost();
             }
 
-            WindowsCaptionButton *minimizeButton() const { return m_minimizeButton; }
-            WindowsCaptionButton *maximizeButton() const { return m_maximizeButton; }
-            WindowsCaptionButton *closeButton() const { return m_closeButton; }
+            WindowsCaptionButton *minimizeButton() const {
+                return m_minimizeButton;
+            }
+            WindowsCaptionButton *maximizeButton() const {
+                return m_maximizeButton;
+            }
+            WindowsCaptionButton *closeButton() const {
+                return m_closeButton;
+            }
 
             void updateFromHost() {
                 if (!m_host) {
@@ -224,19 +281,19 @@ namespace QWK {
                     m_closeButton->hide();
                 }
 
-                const int visibleButtonCount = (canMinimize ? 1 : 0) + (canMaximize ? 1 : 0) +
-                                               (canClose ? 1 : 0);
+                const int visibleButtonCount =
+                    (canMinimize ? 1 : 0) + (canMaximize ? 1 : 0) + (canClose ? 1 : 0);
                 setFixedWidth(kCaptionButtonWidth * visibleButtonCount);
                 move(std::max(0, m_host->width() - width()), 0);
                 m_maximizeButton->setMaximized(m_host->isMaximized());
+                m_closeButton->setTopRightCornerRadius(effectiveTopRightCornerRadius(m_host));
                 ensureRaised();
             }
 
         protected:
             bool event(QEvent *event) override {
-                if (!m_raising &&
-                    (event->type() == QEvent::ZOrderChange ||
-                     event->type() == QEvent::ShowToParent)) {
+                if (!m_raising && (event->type() == QEvent::ZOrderChange ||
+                                   event->type() == QEvent::ShowToParent)) {
                     ensureRaised();
                 }
                 return QWidget::event(event);
@@ -325,23 +382,21 @@ namespace QWK {
         q->setSystemButton(WindowAgentBase::Maximize, bar->maximizeButton());
         q->setSystemButton(WindowAgentBase::Close, bar->closeButton());
 
-        QObject::connect(bar->minimizeButton(), &QPushButton::clicked, hostWidget,
-                         [host = QPointer<QWidget>(hostWidget)]() {
-                             postSystemCommand(host, SC_MINIMIZE);
+        QObject::connect(
+            bar->minimizeButton(), &QPushButton::clicked, hostWidget,
+            [host = QPointer<QWidget>(hostWidget)]() { postSystemCommand(host, SC_MINIMIZE); });
+        QObject::connect(bar->maximizeButton(), &QPushButton::clicked, hostWidget,
+                         [host = QPointer<QWidget>(hostWidget), button = bar->maximizeButton()]() {
+                             if (!host) {
+                                 return;
+                             }
+                             postSystemCommand(host,
+                                               host->isMaximized() ? SC_RESTORE : SC_MAXIMIZE);
+                             QCoreApplication::postEvent(button, new QEvent(QEvent::Leave));
                          });
         QObject::connect(
-            bar->maximizeButton(), &QPushButton::clicked, hostWidget,
-            [host = QPointer<QWidget>(hostWidget), button = bar->maximizeButton()]() {
-                if (!host) {
-                    return;
-                }
-                postSystemCommand(host, host->isMaximized() ? SC_RESTORE : SC_MAXIMIZE);
-                QCoreApplication::postEvent(button, new QEvent(QEvent::Leave));
-            });
-        QObject::connect(bar->closeButton(), &QPushButton::clicked, hostWidget,
-                         [host = QPointer<QWidget>(hostWidget)]() {
-                             postSystemCommand(host, SC_CLOSE);
-                         });
+            bar->closeButton(), &QPushButton::clicked, hostWidget,
+            [host = QPointer<QWidget>(hostWidget)]() { postSystemCommand(host, SC_CLOSE); });
 
         bar->show();
         bar->updateFromHost();
@@ -449,16 +504,18 @@ namespace QWK {
 
                     // Since a QExposeEvent will be sent immediately after the QResizeEvent, we can
                     // simply ignore it.
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#  if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
                     struct ExposeEvent : public QExposeEvent {
-                        inline const QRegion &getRegion() const { return m_region; }
+                        inline const QRegion &getRegion() const {
+                            return m_region;
+                        }
                     };
                     auto ee = static_cast<ExposeEvent *>(event);
                     bool exposeRegionValid = !ee->getRegion().isNull();
-#else
+#  else
                     auto ee = static_cast<QExposeEvent *>(event);
                     bool exposeRegionValid = !ee->region().isNull();
-#endif
+#  endif
                     auto window = widget->windowHandle();
                     if (window->isExposed() && isNormalWindow() && exposeRegionValid) {
                         forwardEventToWindowAndDraw(window, event);
