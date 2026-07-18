@@ -12,7 +12,6 @@
 #include <QtCore/QTimer>
 #include <QtGui/QIcon>
 #include <QtGui/QPainter>
-#include <QtGui/QPainterPath>
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QPushButton>
 
@@ -34,17 +33,6 @@ namespace QWK {
 
         constexpr int kCaptionButtonWidth = 46;
         constexpr int kCaptionButtonHeight = 32;
-        constexpr qreal kRoundedWindowCornerRadius = 8.0;
-        constexpr qreal kSmallRoundedWindowCornerRadius = 4.0;
-        constexpr DWORD kDwmWindowCornerPreferenceAttribute = 33;
-        constexpr char kEffectiveCornerRadiusProperty[] = "_qwk_effective_top_right_corner_radius";
-
-        enum class DwmWindowCornerPreference : int {
-            Default = 0,
-            DoNotRound = 1,
-            Round = 2,
-            RoundSmall = 3,
-        };
 
         enum class CaptionButtonRole {
             Minimize,
@@ -58,38 +46,6 @@ namespace QWK {
             }
             QWidget *window = widget->window();
             return window ? reinterpret_cast<HWND>(window->internalWinId()) : nullptr;
-        }
-
-        qreal effectiveTopRightCornerRadius(QWidget *host) {
-            if (!host || host->isMaximized() || host->isFullScreen() ||
-                !Private::IsWindows11OrGreater_Real()) {
-                return 0.0;
-            }
-
-            using DwmGetWindowAttributePtr = HRESULT(WINAPI *)(HWND, DWORD, PVOID, DWORD);
-            static const auto getWindowAttribute = []() -> DwmGetWindowAttributePtr {
-                HMODULE module = ::GetModuleHandleW(L"dwmapi.dll");
-                if (!module) {
-                    module = ::LoadLibraryW(L"dwmapi.dll");
-                }
-                return module ? reinterpret_cast<DwmGetWindowAttributePtr>(
-                                    ::GetProcAddress(module, "DwmGetWindowAttribute"))
-                              : nullptr;
-            }();
-
-            DwmWindowCornerPreference preference = DwmWindowCornerPreference::Default;
-            const HWND hwnd = windowHandleForWidget(host);
-            if (getWindowAttribute && hwnd &&
-                SUCCEEDED(getWindowAttribute(hwnd, kDwmWindowCornerPreferenceAttribute, &preference,
-                                             sizeof(preference)))) {
-                if (preference == DwmWindowCornerPreference::DoNotRound) {
-                    return 0.0;
-                }
-                if (preference == DwmWindowCornerPreference::RoundSmall) {
-                    return kSmallRoundedWindowCornerRadius;
-                }
-            }
-            return kRoundedWindowCornerRadius;
         }
 
         void postSystemCommand(QWidget *host, WPARAM command) {
@@ -134,16 +90,6 @@ namespace QWK {
                 }
             }
 
-            void setTopRightCornerRadius(qreal radius) {
-                radius = std::clamp(radius, 0.0, static_cast<qreal>(std::min(width(), height())));
-                if (qFuzzyCompare(m_topRightCornerRadius + 1.0, radius + 1.0)) {
-                    return;
-                }
-                m_topRightCornerRadius = radius;
-                setProperty(kEffectiveCornerRadiusProperty, radius);
-                update();
-            }
-
             void setMaximized(bool maximized) {
                 if (m_maximized == maximized) {
                     return;
@@ -174,22 +120,9 @@ namespace QWK {
                         background = dark ? QColor(255, 255, 255, pressed ? 36 : 24)
                                           : QColor(0, 0, 0, pressed ? 34 : 20);
                     }
-                    const qreal cornerRadius = m_topRightCornerRadius;
-                    if (closeButton && cornerRadius > 0.0) {
-                        painter.setRenderHint(QPainter::Antialiasing, true);
-                        QPainterPath hoverPath;
-                        hoverPath.moveTo(0.0, 0.0);
-                        hoverPath.lineTo(width() - cornerRadius, 0.0);
-                        hoverPath.arcTo(QRectF(width() - cornerRadius * 2.0, 0.0,
-                                               cornerRadius * 2.0, cornerRadius * 2.0),
-                                        90.0, -90.0);
-                        hoverPath.lineTo(width(), height());
-                        hoverPath.lineTo(0.0, height());
-                        hoverPath.closeSubpath();
-                        painter.fillPath(hoverPath, background);
-                    } else {
-                        painter.fillRect(rect(), background);
-                    }
+                    // Caption backplates are full-bleed. DWM owns the top-level corner clip;
+                    // duplicating it here leaves an antialiased seam at fractional scale factors.
+                    painter.fillRect(rect(), background);
                 }
 
                 QColor glyphColor = palette().windowText().color();
@@ -223,7 +156,6 @@ namespace QWK {
             QIcon m_icon;
             QIcon m_checkedIcon;
             bool m_maximized = false;
-            qreal m_topRightCornerRadius = 0.0;
         };
 
         class WindowsCaptionButtonBar final : public QWidget {
@@ -287,7 +219,6 @@ namespace QWK {
                 setFixedWidth(kCaptionButtonWidth * visibleButtonCount);
                 move(std::max(0, m_host->width() - width()), 0);
                 m_maximizeButton->setMaximized(m_host->isMaximized());
-                m_closeButton->setTopRightCornerRadius(effectiveTopRightCornerRadius(m_host));
                 ensureRaised();
             }
 
